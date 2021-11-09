@@ -1,6 +1,17 @@
 # Blooming Cassandra
 A project to add Bloom filter indexing (Multidimensional Bloom Filters) to Cassandra.
 
+This project depends upon Bloom filter libraries not currently in the Apache Commons collections libraries.  
+You will need to clone `https://github.com/Claudenw/commons-collections` and build the `simplify-bloom-filters` branch
+
+```
+git clone https://github.com/Claudenw/commons-collections
+cd commons-collections
+git fetch --all
+git checkout simplify_bloom_filters
+mvn install
+```
+
 
 ## Test setup
 
