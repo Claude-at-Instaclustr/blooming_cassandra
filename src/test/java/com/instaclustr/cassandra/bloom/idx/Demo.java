@@ -81,7 +81,7 @@ public class Demo {
             HasherCollection hasher = new HasherCollection();
 
 
-            {
+            while ( ! s.isEmpty() ) {
                 hasher.add( GeoNameHasher.hasherFor( s ));
 
                 System.out.println( "Enter additional criteria (enter to search)");
