@@ -1,0 +1,29 @@
+##
+## Script to create a Cassandra Bloom filter match function
+##
+## returnes true if the candidate contains the target
+##
+CREATE OR REPLACE FUNCTION  
+BFContains (candidate Blob, target Blob) 
+CALLED ON NULL INPUT
+RETURNS boolean 
+LANGUAGE Java 
+AS '
+	if (candidate == null) {
+		return target==null?Boolean.TRUE:Boolean.FALSE;
+	}
+	if (target == null) {
+		return Boolean.TRUE;
+	}
+	
+	if (candidate.remaining() < target.remaining() ) {
+		return Boolean.FALSE;
+	}
+	while (target.remaining()>0) {
+		byte b = target.get();
+		if ((candidate.get() & b) != b) {
+			return Boolean.FALSE;
+            	}
+        }
+        return Boolean.TRUE;
+';
