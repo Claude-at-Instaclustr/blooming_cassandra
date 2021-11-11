@@ -43,6 +43,11 @@ public class Demo {
 
     }
 
+    public void close() {
+        session.close();
+        cluster.close();
+    }
+
     public void initTable() {
         session.execute(keyspace);
         session.execute(table);
@@ -80,7 +85,6 @@ public class Demo {
             String s = reader.readLine();
             HasherCollection hasher = new HasherCollection();
 
-
             while ( ! s.isEmpty() ) {
                 hasher.add( GeoNameHasher.hasherFor( s ));
 
@@ -96,12 +100,19 @@ public class Demo {
                 System.out.println( "\nSearch Results:");
                 BloomFilter filter = new SimpleBloomFilter( GeoNameHasher.shape, hasher );
                 List<GeoName> results = demo.search( filter );
-                results.iterator().forEachRemaining( gn -> System.out.println( String.format( "%s%n%n", gn )));
+                if (results.isEmpty()) {
+                    System.out.println( "No Results found");
+                } else {
+                    results.iterator().forEachRemaining( gn -> System.out.println( String.format( "%s%n%n", gn )));
+                }
+
+                hasher = new HasherCollection();
                 System.out.println( "\nEnter criteria (enter to quit)");
                 s = reader.readLine();
             }
 
         }
+        demo.close();
     }
 
 }

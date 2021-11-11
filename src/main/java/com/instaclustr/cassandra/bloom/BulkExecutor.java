@@ -25,6 +25,8 @@ import java.util.concurrent.Semaphore;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
+import org.apache.commons.collections4.bloomfilter.exceptions.NoMatchException;
+
 import com.datastax.driver.core.ResultSet;
 import com.datastax.driver.core.ResultSetFuture;
 import com.datastax.driver.core.Session;
@@ -54,7 +56,9 @@ public class BulkExecutor {
 	/*
 	 * The service that executes the runnables.
 	 */
-	private ExecutorService executor = Executors.newSingleThreadExecutor();
+	//private ExecutorService executor = Executors.newSingleThreadExecutor();
+	private ExecutorService executor = Executors.newCachedThreadPool();
+	//private ExecutorService executor = Executors.newFixedThreadPool(3);
 
 	/**
 	 * Constructor.
@@ -67,6 +71,12 @@ public class BulkExecutor {
 		updatePermits = new Semaphore(200);
 	}
 
+	public void kill() {
+	    for (ResultSetFuture rsf : map.values()) {
+	        rsf.cancel(true);
+	    }
+	    map.clear();
+	}
 	/**
 	 * Execute a number of statements.
 	 *
@@ -98,18 +108,22 @@ public class BulkExecutor {
 			    ResultSetFuture rsf = map.get(this);
 			    ResultSet rs;
                 try {
-                    rs = rsf.get();
-                    if (func != null) {
-                        func.accept(rs);
+                    if (rsf != null) {
+                        rs = rsf.get();
+                        if (func != null) {
+                            func.accept(rs);
+                        }
                     }
                 }
+                catch (NoMatchException e) {
+                    System.err.println( "No Match Detected");
+                }
                 catch (InterruptedException | ExecutionException e) {
-                    // TODO Auto-generated catch block
                     e.printStackTrace();
                 } finally {
+                    map.remove(this);
                     updatePermits.release();
                 }
-				map.remove(this);
 			}
 		};
 
