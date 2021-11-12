@@ -1,0 +1,3 @@
+CREATE KEYSPACE IF NOT EXISTS geoNames WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };
+CREATE TABLE IF NOT EXISTS geoNames.geoname (geonameid text, name text, asciiname text, alternatenames text, latitude text, longitude text, feature_class text,feature_code text,country_code text,cc2 text,admin1_code text,admin2_code text, admin3_code text, admin4_code text, population text, elevation text, dem text, timezone text, modification_date text,bf blob,PRIMARY KEY (geonameid ));
+CREATE TABLE IF NOT EXISTS geoNames.geoNamesIdx ( position int, code int, tokn text, PRIMARY KEY((position), code, tokn)); 
