@@ -1,0 +1,3 @@
+## backup /restore 
+
+https://docs.datastax.com/en/cassandra-oss/2.2/cassandra/operations/opsBackupSnapshotRestore.html

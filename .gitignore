@@ -10,8 +10,8 @@ buildNumber.properties
 # https://github.com/takari/maven-wrapper#usage-without-binary-jar
 .mvn/wrapper/maven-wrapper.jar
 src/test/resources/allCountries.*
-src/test/resources/snapshots/
 src/test/resources/cassandra/data/
+src/test/resources/cassandra/snapshots/
 
 .classpath
 .project
