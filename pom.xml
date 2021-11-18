@@ -106,6 +106,6 @@
 	</dependencyManagement>
 	<properties>
 		<datastax-version>3.11.0</datastax-version>
-		<cassandra-version>3.11.11</cassandra-version>
+		<cassandra-version>4.0.1</cassandra-version>
 	</properties>
 </project>
