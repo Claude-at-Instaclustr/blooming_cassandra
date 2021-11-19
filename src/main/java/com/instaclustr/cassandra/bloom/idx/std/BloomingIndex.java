@@ -15,9 +15,6 @@ import java.util.stream.StreamSupport;
 
 import org.apache.cassandra.cql3.Operator;
 import org.apache.cassandra.cql3.statements.schema.IndexTarget;
-import org.apache.cassandra.db.CBuilder;
-import org.apache.cassandra.db.Clustering;
-import org.apache.cassandra.db.ClusteringComparator;
 import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.db.ReadCommand;
@@ -29,24 +26,17 @@ import org.apache.cassandra.db.filter.RowFilter;
 import org.apache.cassandra.db.lifecycle.SSTableSet;
 import org.apache.cassandra.db.lifecycle.View;
 import org.apache.cassandra.db.marshal.AbstractType;
-import org.apache.cassandra.db.marshal.ByteBufferAccessor;
 import org.apache.cassandra.db.marshal.ByteType;
-import org.apache.cassandra.db.marshal.CollectionType;
 import org.apache.cassandra.db.marshal.IntegerType;
 import org.apache.cassandra.db.partitions.PartitionIterator;
 import org.apache.cassandra.db.partitions.PartitionUpdate;
-import org.apache.cassandra.db.rows.Cell;
-import org.apache.cassandra.db.rows.Row;
 import org.apache.cassandra.dht.LocalPartitioner;
 import org.apache.cassandra.exceptions.InvalidRequestException;
 import org.apache.cassandra.index.Index;
 import org.apache.cassandra.index.IndexRegistry;
 import org.apache.cassandra.index.SecondaryIndexBuilder;
 import org.apache.cassandra.index.TargetParser;
-import org.apache.cassandra.index.internal.CassandraIndex;
-import org.apache.cassandra.index.internal.CassandraIndexFunctions;
 import org.apache.cassandra.index.internal.CollatedViewIndexBuilder;
-import org.apache.cassandra.index.internal.IndexEntry;
 import org.apache.cassandra.index.transactions.IndexTransaction;
 import org.apache.cassandra.io.sstable.ReducingKeyIterator;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
@@ -57,7 +47,6 @@ import org.apache.cassandra.schema.TableMetadataRef;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.Pair;
 import org.apache.cassandra.utils.concurrent.Refs;
-import org.apache.jena.util.iterator.ExtendedIterator;
 import org.apache.jena.util.iterator.WrappedIterator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -83,9 +72,6 @@ public class BloomingIndex implements Index {
      */
     public static TableMetadata indexCfsMetadata(TableMetadata baseCfsMetadata, IndexMetadata indexMetadata)
     {
-        Pair<ColumnMetadata, IndexTarget.Type> target = TargetParser.parse(baseCfsMetadata, indexMetadata);
-
-
 
         TableMetadata.Builder builder =
                 TableMetadata.builder(baseCfsMetadata.keyspace, baseCfsMetadata.indexTableName(indexMetadata), baseCfsMetadata.id)
@@ -121,90 +107,11 @@ public class BloomingIndex implements Index {
         }
     }
 
-
-
-
-
-    private ExtendedIterator<DecoratedKey> getDecoratedKeys(ByteBuffer rowKey,
-            Clustering<?> clustering,
-            Cell<?> cell) {
-        return BFUtils.getIndexedValues(rowKey, clustering, cell).mapWith( v -> {return serde.getIndexKeyFor(v);} );
-    }
-
-
-
-
-    /**
-     * Used at search time to convert a row in the index table into a simple struct containing the values required
-     * to retrieve the corresponding row from the base table.
-     * @param indexedValue the partition key of the indexed table (i.e. the value that was indexed)
-     * @param indexEntry a row from the index table
-     * @return
-     */
-    private IndexEntry decodeEntry(DecoratedKey indexedValue, Row indexEntry) {
-        Clustering<?> clustering = indexEntry.clustering();
-
-        Clustering<?> indexedEntryClustering = null;
-        if (getIndexedColumn().isStatic())
-            throw new IllegalStateException( "Static index columns not allowed");
-        else {
-            ClusteringComparator baseComparator = baseCfs.getComparator();
-            CBuilder builder = CBuilder.create(baseComparator);
-            for (int i = 0; i < baseComparator.size(); i++)
-                builder.add(clustering, i + 1);
-            indexedEntryClustering = builder.build();
-        }
-
-        return new IndexEntry(indexedValue, clustering, indexEntry.primaryKeyLivenessInfo().timestamp(),
-                clustering.bufferAt(0), indexedEntryClustering);
-    }
-
-    private static <V> boolean valueIsEqual(AbstractType<?> type, Cell<V> cell, ByteBuffer value) {
-        return type.compare(cell.value(), cell.accessor(), value, ByteBufferAccessor.instance) == 0;
-    }
-
-    /**
-     * Check whether a value retrieved from an index is still valid by comparing it to current row from the base table.
-     * Used at read time to identify out of date index entries so that they can be excluded from search results and
-     * repaired
-     * @param row the current row from the primary data table
-     * @param indexValue the value we retrieved from the index
-     * @param nowInSec
-     * @return true if the index is out of date and the entry should be dropped
-     */
-    private boolean isStale(Row data, ByteBuffer indexValue, int nowInSec) {
-        Cell<?> cell = data.getCell(indexedColumn);
-        return cell == null || !cell.isLive(nowInSec) || !valueIsEqual(indexedColumn.type, cell, indexValue);
-    }
-
-
-
-    /**
-     * Returns true if an index of this type can support search predicates of the form [column] OPERATOR [value]
-     * @param indexedColumn
-     * @param operator
-     * @return
-     */
-    protected boolean supportsOperator(ColumnMetadata indexedColumn, Operator operator)
-    {
-        return operator == Operator.EQ;
-    }
-
-
     public ColumnMetadata getIndexedColumn()
     {
         return indexedColumn;
     }
-    //
-    //    public ClusteringComparator getIndexComparator()
-    //    {
-    //        return indexCfs.metadata().comparator;
-    //    }
 
-    //    public ColumnFamilyStore getIndexCfs()
-    //    {
-    //        return indexCfs;
-    //    }
 
     @Override
     public void register(IndexRegistry registry)
@@ -299,7 +206,7 @@ public class BloomingIndex implements Index {
     public boolean supportsExpression(ColumnMetadata column, Operator operator)
     {
         return indexedColumn.name.equals(column.name)
-                && supportsOperator(indexedColumn, operator);
+                && operator == Operator.EQ;
     }
 
     private boolean supportsExpression(RowFilter.Expression expression)
@@ -347,7 +254,7 @@ public class BloomingIndex implements Index {
 
         if (target.isPresent())
         {
-            return new BloomSearcher( serde, command, target.get());
+            return new BloomSearcher( this, serde, command, target.get());
         }
 
         return null;
@@ -359,7 +266,6 @@ public class BloomingIndex implements Index {
     {
         assert !indexedColumn.isPrimaryKeyColumn();
 
-        //update.forEach(null);
         WrappedIterator.create(update.iterator()).mapWith( r -> r.getCell(indexedColumn).buffer() )
         .filterDrop( b -> b == null ).forEach( v -> {if (v.remaining() >= FBUtilities.MAX_UNSIGNED_SHORT) {
             throw new InvalidRequestException(String.format(
@@ -433,62 +339,6 @@ public class BloomingIndex implements Index {
         return StreamSupport.stream(sstables.spliterator(), false)
                 .map(SSTableReader::toString)
                 .collect(Collectors.joining(", "));
-    }
-
-
-    /**
-     * Factory method for new CassandraIndex instances
-     * @param baseCfs
-     * @param indexMetadata
-     * @return
-     */
-    public static CassandraIndex newIndex(ColumnFamilyStore baseCfs, IndexMetadata indexMetadata)
-    {
-        return getFunctions(indexMetadata, TargetParser.parse(baseCfs.metadata(), indexMetadata)).newIndexInstance(baseCfs, indexMetadata);
-    }
-
-    static CassandraIndexFunctions getFunctions(IndexMetadata indexDef,
-            Pair<ColumnMetadata, IndexTarget.Type> target)
-    {
-        if (indexDef.isKeys())
-            return CassandraIndexFunctions.KEYS_INDEX_FUNCTIONS;
-
-        ColumnMetadata indexedColumn = target.left;
-        if (indexedColumn.type.isCollection() && indexedColumn.type.isMultiCell())
-        {
-            switch (((CollectionType)indexedColumn.type).kind)
-            {
-            case LIST:
-                return CassandraIndexFunctions.COLLECTION_VALUE_INDEX_FUNCTIONS;
-            case SET:
-                return CassandraIndexFunctions.COLLECTION_KEY_INDEX_FUNCTIONS;
-            case MAP:
-                switch (target.right)
-                {
-                case KEYS:
-                    return CassandraIndexFunctions.COLLECTION_KEY_INDEX_FUNCTIONS;
-                case KEYS_AND_VALUES:
-                    return CassandraIndexFunctions.COLLECTION_ENTRY_INDEX_FUNCTIONS;
-                case VALUES:
-                    return CassandraIndexFunctions.COLLECTION_VALUE_INDEX_FUNCTIONS;
-                }
-                throw new AssertionError();
-            }
-        }
-
-        switch (indexedColumn.kind)
-        {
-        case CLUSTERING:
-            return CassandraIndexFunctions.CLUSTERING_COLUMN_INDEX_FUNCTIONS;
-        case REGULAR:
-        case STATIC:
-            return CassandraIndexFunctions.REGULAR_COLUMN_INDEX_FUNCTIONS;
-        case PARTITION_KEY:
-            return CassandraIndexFunctions.PARTITION_KEY_INDEX_FUNCTIONS;
-            //case COMPACT_VALUE:
-                //    return new CompositesIndexOnCompactValue();
-        }
-        throw new AssertionError();
     }
 }
 

@@ -18,11 +18,8 @@ import org.apache.cassandra.db.ReadExecutionController;
 import org.apache.cassandra.db.SinglePartitionReadCommand;
 import org.apache.cassandra.db.WriteContext;
 import org.apache.cassandra.db.compaction.CompactionManager;
-import org.apache.cassandra.db.filter.ClusteringIndexFilter;
-import org.apache.cassandra.db.filter.ColumnFilter;
 import org.apache.cassandra.db.partitions.PartitionUpdate;
 import org.apache.cassandra.db.rows.BTreeRow;
-import org.apache.cassandra.db.rows.Cell;
 import org.apache.cassandra.db.rows.Row;
 import org.apache.cassandra.db.rows.UnfilteredRowIterator;
 import org.apache.cassandra.index.transactions.UpdateTransaction;
@@ -112,23 +109,6 @@ public class BloomingIndexSerde {
 
         doDelete(valueKey, buildIndexClustering(rowKey, clustering), deletedAt, ctx);
     }
-
-//  /**
-//  * Called when deleting entries from indexes on primary key columns
-//  */
-// private void delete(ByteBuffer rowKey,
-//                     Clustering<?> clustering,
-//                     DeletionTime deletion,
-//                     WriteContext ctx)
-// {
-//     getDecoratedKeys(rowKey, clustering, null)
-//     .forEach( (valueKey) -> {
-//     doDelete(valueKey,
-//              buildIndexClustering(rowKey, clustering, null),
-//              deletion,
-//              ctx);
-//     });
-// }
 
     private void doDelete(DecoratedKey indexKey, Clustering<?> indexClustering, DeletionTime deletion,
             WriteContext ctx) {
