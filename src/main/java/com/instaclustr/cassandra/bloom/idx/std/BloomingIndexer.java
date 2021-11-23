@@ -21,7 +21,6 @@ public class BloomingIndexer implements Indexer {
     private final ColumnMetadata indexedColumn;
     private final int nowInSec;
     private final WriteContext ctx;
-    private final IndexTransaction.Type transactionType;
 
     public BloomingIndexer(final DecoratedKey key, final BloomingIndexSerde serde, final ColumnMetadata indexedColumn,
             final int nowInSec, final WriteContext ctx, final IndexTransaction.Type transactionType) {
@@ -30,7 +29,6 @@ public class BloomingIndexer implements Indexer {
         this.indexedColumn = indexedColumn;
         this.nowInSec = nowInSec;
         this.ctx = ctx;
-        this.transactionType = transactionType;
     }
 
     @Override
@@ -87,7 +85,7 @@ public class BloomingIndexer implements Indexer {
         int min = oldBytes.length > newBytes.length ? newBytes.length : oldBytes.length;
         boolean changed = false;
 
-        long[] changes = new long[BitMap.numberOfBuckets(limit)];
+        long[] changes = new long[BitMap.numberOfBitMaps(limit)];
         for (int i = 0; i < min; i++) {
             if (oldBytes[i] != newBytes[i]) {
                 BitMap.set(changes, i);
@@ -142,7 +140,6 @@ public class BloomingIndexer implements Indexer {
     @Override
     public void finish() {
         // TODO Auto-generated method stub
-
     }
 
 }

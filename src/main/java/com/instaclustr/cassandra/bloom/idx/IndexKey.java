@@ -1,17 +1,12 @@
 package com.instaclustr.cassandra.bloom.idx;
 
 import java.nio.ByteBuffer;
-import java.util.Comparator;
-import java.util.Iterator;
-import java.util.function.Predicate;
-
-import org.apache.jena.util.iterator.ExtendedIterator;
-import org.apache.jena.util.iterator.WrappedIterator;
-
 import com.instaclustr.cassandra.bloom.idx.std.BFUtils;
 
 /**
- * A Multidimensional Bloom filter entry key.
+ * A Multidimensional Bloom filter entry key.  Keys are naturally ordered by their selectivity.
+ * Keys are ordered by selectivity and position, with the highest selectivity first.
+ * Hashcodes for the IndexKey are the selectivity values.
  */
 public class IndexKey implements Comparable<IndexKey> {
     /**
@@ -21,21 +16,21 @@ public class IndexKey implements Comparable<IndexKey> {
     /**
      * The code from the position
      */
-    private byte code;
+    private int code;
 
     /**
      * The number of bytes the data for the key uses.
      */
-    public static final int BYTES = Integer.BYTES+1;
+    public static final int BYTES = Integer.BYTES*2;
 
     /**
      * Constructor.
      * @param position the byte postion of the code in the bloom filter.
      * @param code the code from the filter.
      */
-    public IndexKey(int position, byte code ) {
+    public IndexKey(int position, int code ) {
         this.position=position;
-        this.code=code;
+        this.code= 0xFF & code;
     }
 
     /**
@@ -50,13 +45,13 @@ public class IndexKey implements Comparable<IndexKey> {
      * Gets the code for this key.
      * @return the code from the bloom filter at the position.
      */
-    public byte getCode() {
+    public int getCode() {
         return code;
     }
 
-
-    public interface Consumer extends java.util.function.Consumer<IndexKey> {
-
+    @Override
+    public String toString() {
+        return String.format( "IndexKey[%d, %2x]", position, code);
     }
 
     @Override
@@ -69,17 +64,31 @@ public class IndexKey implements Comparable<IndexKey> {
         return BFUtils.selectivityTable[getCode()];
     }
 
+    /**
+     * Returns the IndexKey as a ByteBuffer suitable for index writing
+     * @return ByteBuffer for key.
+     */
     public ByteBuffer asKey() {
         ByteBuffer result = ByteBuffer.allocate(BYTES);
         result.putInt( getPosition() );
-        result.put( getCode() );
+        result.putInt( getCode() );
+        result.flip();
         return result;
     }
 
+    /**
+     * Converts this IndexKey into an IndexMap
+     * @return the IndexMap for this key.
+     * @see IndexMap#IndexMap(IndexKey)
+     */
     public IndexMap asMap() {
         return new IndexMap(this);
     }
 
+    /**
+     * Returns {@code true} if the code is zero.
+     * @return {@code true} if the code is zero.
+     */
     public boolean isZero() {
         return getCode()==0;
     }

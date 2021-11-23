@@ -18,12 +18,19 @@ import org.apache.cassandra.db.ReadExecutionController;
 import org.apache.cassandra.db.SinglePartitionReadCommand;
 import org.apache.cassandra.db.WriteContext;
 import org.apache.cassandra.db.compaction.CompactionManager;
+import org.apache.cassandra.db.marshal.BytesType;
+import org.apache.cassandra.db.marshal.Int32Type;
+import org.apache.cassandra.db.marshal.LongType;
 import org.apache.cassandra.db.partitions.PartitionUpdate;
 import org.apache.cassandra.db.rows.BTreeRow;
 import org.apache.cassandra.db.rows.Row;
 import org.apache.cassandra.db.rows.UnfilteredRowIterator;
+import org.apache.cassandra.dht.LocalPartitioner;
 import org.apache.cassandra.index.transactions.UpdateTransaction;
+import org.apache.cassandra.schema.ColumnMetadata;
+import org.apache.cassandra.schema.IndexMetadata;
 import org.apache.cassandra.schema.TableMetadata;
+import org.apache.cassandra.schema.TableMetadataRef;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -35,8 +42,37 @@ public class BloomingIndexSerde {
 
     private final ColumnFamilyStore indexCfs;
 
-    public BloomingIndexSerde(ColumnFamilyStore indexCfs) {
-        this.indexCfs = indexCfs;
+
+    /**
+     * Construct the BloomingIndex serializer/deserializer.
+     *
+     * <p>Creates the index table</p>
+     *
+     * @param baseCfs
+     * @param indexMetadata
+     */
+
+    public BloomingIndexSerde(ColumnFamilyStore baseCfs, IndexMetadata indexMetadata) {
+        TableMetadata baseCfsMetadata = baseCfs.metadata();
+        TableMetadata.Builder builder =
+                TableMetadata.builder(baseCfsMetadata.keyspace, baseCfsMetadata.indexTableName(indexMetadata), baseCfsMetadata.id)
+                .kind(TableMetadata.Kind.INDEX)
+                .partitioner(new LocalPartitioner(LongType.instance))
+                .addPartitionKeyColumn("pos", Int32Type.instance)
+                .addPartitionKeyColumn("code", Int32Type.instance)
+                .addClusteringColumn("dataKey", BytesType.instance);
+
+//        for( ColumnMetadata meta : baseCfsMetadata.primaryKeyColumns()) {
+//            builder.addColumn(ColumnMetadata.regularColumn( meta.ksName, meta.cfName, meta.name.toString(), meta.type));
+//        }
+
+        TableMetadataRef tableRef = TableMetadataRef.forOfflineTools(builder.build().updateIndexTableMetadata(baseCfsMetadata.params));
+
+
+        indexCfs = ColumnFamilyStore.createColumnFamilyStore(baseCfs.keyspace,
+                tableRef.name,
+                tableRef,
+                baseCfs.getTracker().loadsstables);
     }
 
     public ClusteringComparator getIndexComparator() {
@@ -68,6 +104,13 @@ public class BloomingIndexSerde {
         return indexCfs.decorateKey(value);
     }
 
+    public DecoratedKey getIndexKeyFor(ByteBuffer... value) {
+        int len = 0;
+        for (ByteBuffer bb : value) { len+=bb.remaining(); }
+        ByteBuffer result = ByteBuffer.allocate(len);
+        for (ByteBuffer bb : value) { result.put( bb ); }
+        return getIndexKeyFor( result );
+    }
     /**
      * Used to construct an the clustering for an entry in the index table based on values from the base data.
      * The clustering columns in the index table encode the values required to retrieve the correct data from the base
@@ -92,9 +135,11 @@ public class BloomingIndexSerde {
 
     public void insert(IndexKey indexKey, DecoratedKey rowKey, Clustering<?> clustering, LivenessInfo info,
             WriteContext ctx) {
-        DecoratedKey valueKey = getIndexKeyFor(indexKey.asKey());
-        Row row = BTreeRow.noCellLiveRow(buildIndexClustering(rowKey, clustering), info);
+        System.out.println( "Inserting "+indexKey );
+        Clustering<?> indexCluster = buildIndexClustering(rowKey, clustering);
 
+        DecoratedKey valueKey = getIndexKeyFor(indexKey.asKey());
+        Row row = BTreeRow.noCellLiveRow(indexCluster, info);
         PartitionUpdate upd = partitionUpdate(valueKey, row);
         indexCfs.getWriteHandler().write(upd, ctx, UpdateTransaction.NO_OP);
         logger.trace("Inserted entry into index for value {}", valueKey);
@@ -105,17 +150,13 @@ public class BloomingIndexSerde {
      */
     public void delete(IndexKey indexKey, DecoratedKey rowKey, Clustering<?> clustering, DeletionTime deletedAt,
             WriteContext ctx) {
+        System.out.println( "Deleting "+indexKey );
         DecoratedKey valueKey = getIndexKeyFor(indexKey.asKey());
-
-        doDelete(valueKey, buildIndexClustering(rowKey, clustering), deletedAt, ctx);
-    }
-
-    private void doDelete(DecoratedKey indexKey, Clustering<?> indexClustering, DeletionTime deletion,
-            WriteContext ctx) {
-        Row row = BTreeRow.emptyDeletedRow(indexClustering, Row.Deletion.regular(deletion));
-        PartitionUpdate upd = partitionUpdate(indexKey, row);
+        Clustering<?> indexClustering = buildIndexClustering(rowKey, clustering);
+        Row row = BTreeRow.emptyDeletedRow(indexClustering, Row.Deletion.regular(deletedAt));
+        PartitionUpdate upd = partitionUpdate(valueKey, row);
         indexCfs.getWriteHandler().write(upd, ctx, UpdateTransaction.NO_OP);
-        logger.trace("Removed index entry for value {}", indexKey);
+        logger.trace("Removed index entry for value {}", valueKey);
     }
 
     private PartitionUpdate partitionUpdate(DecoratedKey valueKey, Row row) {

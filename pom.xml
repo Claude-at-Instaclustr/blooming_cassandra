@@ -9,24 +9,19 @@
 	License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS 
 	OF ANY KIND, either express or implied. See the License for the specific 
 	language governing permissions and limitations under the License. -->
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
 	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
 	<modelVersion>4.0.0</modelVersion>
 	<groupId>instaclustr.com</groupId>
 	<artifactId>blooming-cassandra</artifactId>
 	<version>0.0.1-SNAPSHOT</version>
 	<name>Blooming-Cassandra</name>
-	<description>Implementation of a Bloom filter indexing in Cassandra </description>	
+	<description>Implementation of a Bloom filter indexing in Cassandra </description>
 	<dependencies>
-		
-		
-		<dependency>
-			<groupId>org.apache.cassandra</groupId>
-			<artifactId>cassandra-all</artifactId>
-		</dependency>
 		<dependency>
 			<groupId>com.datastax.cassandra</groupId>
-			<artifactId>cassandra-driver-core</artifactId>		
+			<artifactId>cassandra-driver-core</artifactId>
 		</dependency>
 		<dependency>
 			<groupId>org.apache.commons</groupId>
@@ -38,7 +33,20 @@
 			<artifactId>commons-codec</artifactId>
 			<version>1.14</version>
 		</dependency>
-		
+
+		<dependency>
+			<groupId>junit</groupId>
+			<artifactId>junit</artifactId>
+			<version>4.13.2</version>
+			<scope>test</scope>
+		</dependency>
+
+
+		<dependency>
+			<groupId>org.apache.commons</groupId>
+			<artifactId>commons-lang3</artifactId>
+			<version>3.11</version>
+		</dependency>
 	</dependencies>
 	<build>
 		<plugins>
@@ -108,4 +116,17 @@
 		<datastax-version>3.11.0</datastax-version>
 		<cassandra-version>4.0.1</cassandra-version>
 	</properties>
+	<repositories>
+	<repository>
+  <id>apache.snapshots</id>
+  <name>Apache Development Snapshot Repository</name>
+  <url>https://repository.apache.org/content/repositories/snapshots/</url>
+  <releases>
+    <enabled>false</enabled>
+  </releases>
+  <snapshots>
+    <enabled>true</enabled>
+  </snapshots>
+</repository>
+	</repositories>
 </project>

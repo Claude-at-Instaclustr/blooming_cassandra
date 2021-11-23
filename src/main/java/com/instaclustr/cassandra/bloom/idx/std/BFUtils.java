@@ -26,27 +26,27 @@ public class BFUtils {
     /**
      * A list of bytes to matching bytes in the bloom filter.
      */
-    public static final byte[][] byteTable;
+    public static final int[][] byteTable;
     public static final int[] selectivityTable;
 
     static {
         // populate the byteTable
         int limit = (1 << Byte.SIZE);
-        byteTable = new byte[limit][];
+        byteTable = new int[limit][];
         selectivityTable = new int[limit];
-        byte[] buffer;
+        int[] buffer;
         int count = 0;
 
-        for (int i = 0; i < limit; i++) {
+        for (int i = 1; i < limit; i++) {
             count = 0;
-            buffer = new byte[256];
-            for (int j = 0; j < limit; j++) {
+            buffer = new int[256];
+            for (int j = 1; j < limit; j++) {
                 if ((j & i) == i) {
-                    buffer[count++] = (byte) j;
+                    buffer[count++] =  j;
                     selectivityTable[j]++;
                 }
             }
-            byteTable[i] = new byte[count];
+            byteTable[i] = new int[count];
             System.arraycopy(buffer, 0, byteTable[i],0,count);
         }
 
@@ -68,7 +68,7 @@ public class BFUtils {
     }
 
     public static ExtendedIterator<IndexKey> getIndexKeys( ByteBuffer bloomFilter ) {
-        return getIndexKeys( extractCodes( bloomFilter ));
+        return getIndexKeys( extractCodes( bloomFilter )).filterDrop( IndexKey::isZero );
     }
 
     public static ExtendedIterator<IndexKey> getIndexKeys( final byte[] codes ) {
@@ -117,7 +117,7 @@ public class BFUtils {
                 .mapWith( key -> {
                     ByteBuffer result = ByteBuffer.allocate(capacity);
                     result.putInt( key.getPosition() );
-                    result.put( key.getCode() );
+                    result.putInt( key.getCode() );
                     result.put(partitionKey);
                     for (ByteBuffer b : clusterKeys) {
                         result.put( b );

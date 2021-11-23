@@ -27,7 +27,10 @@ import org.apache.cassandra.db.lifecycle.SSTableSet;
 import org.apache.cassandra.db.lifecycle.View;
 import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.db.marshal.ByteType;
+import org.apache.cassandra.db.marshal.BytesType;
+import org.apache.cassandra.db.marshal.Int32Type;
 import org.apache.cassandra.db.marshal.IntegerType;
+import org.apache.cassandra.db.marshal.LongType;
 import org.apache.cassandra.db.partitions.PartitionIterator;
 import org.apache.cassandra.db.partitions.PartitionUpdate;
 import org.apache.cassandra.dht.LocalPartitioner;
@@ -76,9 +79,10 @@ public class BloomingIndex implements Index {
         TableMetadata.Builder builder =
                 TableMetadata.builder(baseCfsMetadata.keyspace, baseCfsMetadata.indexTableName(indexMetadata), baseCfsMetadata.id)
                 .kind(TableMetadata.Kind.INDEX)
-                .partitioner(new LocalPartitioner(IntegerType.instance))
-                .addPartitionKeyColumn("pos", IntegerType.instance)
-                .addClusteringColumn("code", ByteType.instance);
+                .partitioner(new LocalPartitioner(LongType.instance))
+                .addPartitionKeyColumn("pos", Int32Type.instance)
+                .addPartitionKeyColumn("code", Int32Type.instance)
+                .addClusteringColumn("dataKey", BytesType.instance);
 
         for( ColumnMetadata meta : baseCfsMetadata.primaryKeyColumns()) {
             builder.addColumn(ColumnMetadata.regularColumn( meta.ksName, meta.cfName, meta.name.toString(), meta.type));
@@ -92,12 +96,9 @@ public class BloomingIndex implements Index {
         this.baseCfs = baseCfs;
         this.metadata = indexDef;
 
+        serde = new BloomingIndexSerde( baseCfs, indexDef );
+
         Pair<ColumnMetadata, IndexTarget.Type> target = TargetParser.parse(baseCfs.metadata(), indexDef);
-        TableMetadataRef tableRef = TableMetadataRef.forOfflineTools(indexCfsMetadata(baseCfs.metadata(), indexDef));
-        serde = new BloomingIndexSerde( ColumnFamilyStore.createColumnFamilyStore(baseCfs.keyspace,
-                tableRef.name,
-                tableRef,
-                baseCfs.getTracker().loadsstables) );
         indexedColumn = target.left;
         if (indexedColumn.isClusteringColumn() || indexedColumn.isComplex() ||
                 indexedColumn.isCounterColumn() || indexedColumn.isPartitionKey() ||

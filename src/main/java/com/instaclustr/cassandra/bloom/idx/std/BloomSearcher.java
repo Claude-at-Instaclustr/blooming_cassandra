@@ -1,8 +1,10 @@
 package com.instaclustr.cassandra.bloom.idx.std;
 
+import java.nio.ByteBuffer;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.function.Function;
@@ -23,6 +25,7 @@ import org.apache.cassandra.index.internal.CassandraIndexSearcher;
 import org.apache.cassandra.schema.TableMetadata;
 import org.apache.jena.util.iterator.ExtendedIterator;
 import org.apache.jena.util.iterator.WrappedIterator;
+import org.assertj.core.util.Arrays;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -44,10 +47,18 @@ public class BloomSearcher implements Searcher {
         this.serde = serde;
         this.command = command;
         this.expression = expression;
+
+        // A function to convert a row to the key
         this.row2Key = new Function<Row, DecoratedKey>() {
 
             @Override
             public DecoratedKey apply(Row hit) {
+                ByteBuffer bb =  hit.clustering().bufferAt(0);
+                StringBuilder sb = new StringBuilder();
+                while (bb.hasRemaining() ) {
+                    sb.append( (char) bb.get() );
+                }
+                System.out.println("Reading "+sb.toString());
                 return index.baseCfs.decorateKey(hit.clustering().bufferAt(0));
             }
         };
@@ -58,6 +69,8 @@ public class BloomSearcher implements Searcher {
     // closing of the result
     // of this method.
     public UnfilteredPartitionIterator search(ReadExecutionController executionController) {
+        // Create a function to convert DecoratedKey from the index to a Row from the
+        // base table.
         Function<DecoratedKey, UnfilteredRowIterator> key2RowIter = new Function<DecoratedKey, UnfilteredRowIterator>() {
 
             @Override
@@ -70,30 +83,48 @@ public class BloomSearcher implements Searcher {
             };
         };
 
-        // generate the list of records to retrieve from the index
+        // generate the sorted set of IndexKeys for records to retrieve from the index
         Set<IndexKey> lst = new TreeSet<IndexKey>();
-        BFUtils.getIndexKeys(expression.getIndexValue()).filterDrop(IndexKey::isZero).forEach(lst::add);
+        BFUtils.getIndexKeys(expression.getIndexValue()).forEach(lst::add);
 
-        ExtendedIterator<Set<DecoratedKey>> maps = WrappedIterator.create(lst.iterator()).mapWith(IndexKey::asMap)
+        /*
+         * For each key in the index set, create the associated IndexMap and then
+         * process each IndexKey in the IndexMap collecting the base table key values
+         * from the index in a set (mapSet).
+         *
+         * The result is an iterator over the set of solutions for each IndexKey in lst.
+         */
+        ExtendedIterator<Set<DecoratedKey>> maps = WrappedIterator.create(lst.iterator())
+                .mapWith(IndexKey::asMap)
                 .mapWith(idxMap -> {
+                    System.out.println( "Processing "+idxMap );
                     Set<DecoratedKey> mapSet = new HashSet<DecoratedKey>();
-                    Iterator<RowIterator> rows = idxMap.getKeys().mapWith(idxKey -> {
-                        return UnfilteredRowIterators.filter(serde.read(idxKey, command, executionController),
+                    idxMap.getKeys()
+                        .mapWith(idxKey -> {
+                            return UnfilteredRowIterators.filter(serde.read(idxKey, command, executionController),
                                 command.nowInSec());
-                    });
-                    while (rows.hasNext()) {
-
-                        WrappedIterator.create(rows.next()).mapWith(row2Key).forEach(mapSet::add);
-                    }
+                            })
+                        .forEach(row -> {
+                            WrappedIterator.create(row).mapWith(row2Key).forEach(mapSet::add);
+                            });
+                    System.out.println( String.format("Completed Returning %d entries", mapSet.size()));
                     return mapSet;
                 });
+
+        /*
+         * Iterate over the solutions retaining the intersection of the result solution
+         * and the current solution.  if the result solution becomes empty there is no solution
+         * to the query and we can return.
+         */
         Set<DecoratedKey> result = null;
         if (!maps.hasNext()) {
             result = Collections.emptySet();
         } else {
             result = maps.next();
-            while (maps.hasNext()) {
-                result.retainAll(maps.next());
+            while (maps.hasNext() && !result.isEmpty()) {
+                Set<DecoratedKey> nxt = maps.next();
+                result.retainAll(nxt);
+                System.out.println( String.format("Merge yielded %d entries", result.size()));
             }
         }
 

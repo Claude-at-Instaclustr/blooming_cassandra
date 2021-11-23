@@ -2,11 +2,8 @@ package com.instaclustr.cassandra.bloom.idx;
 
 import java.util.Iterator;
 import java.util.NoSuchElementException;
-import java.util.function.Predicate;
-
 import org.apache.jena.util.iterator.ExtendedIterator;
 import org.apache.jena.util.iterator.WrappedIterator;
-
 import com.instaclustr.cassandra.bloom.idx.std.BFUtils;
 
 /**
@@ -20,13 +17,20 @@ public class IndexMap {
     /**
      * The code from the position
      */
-    private byte[] codes;
+    private int[] codes;
 
     /**
      * The number of bytes the data for the key uses.
      */
     public static final int BYTES = Integer.BYTES+1;
 
+    /**
+     * Creates an IndexMap from the IndexKey.
+     * <p>The map is constructed by
+     * retrieving the BFUtils.byteTable entries for {@code key.getCode()}.
+     * Resulting map has the same position as the original key.</p>
+     * @param key the Key to create the map from.
+     */
     public IndexMap( IndexKey key ) {
         this( key.getPosition(), BFUtils.byteTable[key.getCode()]);
     }
@@ -36,7 +40,7 @@ public class IndexMap {
      * @param position the byte postion of the code in the bloom filter.
      * @param code the code from the filter.
      */
-    public IndexMap(int position, byte[] codes ) {
+    public IndexMap(int position, int[] codes ) {
         this.position=position;
         this.codes=codes;
     }
@@ -53,10 +57,23 @@ public class IndexMap {
      * Gets the code for this key.
      * @return the code from the bloom filter at the position.
      */
-    public byte[] getCode() {
+    public int[] getCode() {
         return codes;
     }
 
+    @Override
+    public String toString() {
+        StringBuilder sb = new StringBuilder( String.format( "IndexMap[%d, [", position, hashCode() ));
+        for (int i=0;i<codes.length;i++) {
+            sb.append( String.format( "%s %2x",  i>0? ",":"", codes[i]));
+        }
+        return sb.append(" ]]").toString();
+    }
+
+    /**
+     * Returns the codes in the map as IndexKeys.
+     * @return an ExtendedIterator of IndexKeys
+     */
     public ExtendedIterator<IndexKey> getKeys() {
         return WrappedIterator.create(new Iterator<IndexKey>() {
             int idx = 0;
@@ -76,8 +93,4 @@ public class IndexMap {
         });
     }
 
-
-    public interface Consumer extends java.util.function.Consumer<IndexMap> {
-
-    }
 }

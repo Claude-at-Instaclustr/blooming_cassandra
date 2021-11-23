@@ -1,5 +1,9 @@
 package com.instaclustr.geonames;
 
+import java.nio.LongBuffer;
+import java.util.function.LongConsumer;
+
+import org.apache.commons.collections4.bloomfilter.BitMapProducer;
 import org.apache.commons.collections4.bloomfilter.BloomFilter;
 import org.apache.commons.collections4.bloomfilter.SimpleBloomFilter;
 import org.apache.commons.collections4.bloomfilter.hasher.Hasher;
@@ -140,7 +144,7 @@ public class GeoName {
 
     public static class CassandraSerde {
 
-        private static String fmt = "INSERT INTO geonames.GeoName (geonameid, name, asciiname, alternatenames, latitude, longitude, "
+        private static String fmt = "INSERT INTO %%s (geonameid, name, asciiname, alternatenames, latitude, longitude, "
                 + "feature_class, feature_code, country_code, cc2, admin1_code, admin2_code, admin3_code, admin4_code, "
                 + "population, elevation, dem, timezone, modification_date, bf ) VALUES "
                 + "($$%s$$,$$%s$$,$$%s$$,$$%s$$,$$%s$$,$$%s$$,$$%s$$,$$%s$$,$$%s$$,$$%s$$,$$%s$$,$$%s$$,$$%s$$,$$%s$$,$$%s$$,$$%s$$,$$%s$$,$$%s$$,$$%s$$,%s);";
@@ -195,6 +199,38 @@ public class GeoName {
                     geoname.elevation, geoname.dem, geoname.timezone, geoname.modification_date, hexString(geoname.filter) );
         }
 
+        public static GeoName deserialize(org.apache.cassandra.cql3.UntypedResultSet.Row row) {
+            GeoName result = new GeoName();
+            result.geonameid = row.getString( "geonameid");
+            result.name = row.getString("name");
+            result.asciiname = row.getString("asciiname");
+            result.alternatenames = row.getString("alternatenames");
+            result.latitude = row.getString("latitude");
+            result.longitude = row.getString("longitude");
+            result.feature_class = row.getString("feature_class");
+            result.feature_code = row.getString("feature_code");
+            result.country_code = row.getString("country_code");
+            result.cc2 = row.getString("cc2");
+            result.admin1_code = row.getString("admin1_code");
+            result.admin2_code = row.getString("admin2_code");
+            result.admin3_code = row.getString("admin3_code");
+            result.admin4_code = row.getString("admin4_code");
+            result.population = row.getString("population");
+            result.elevation = row.getString("elevation");
+            result.dem = row.getString("dem");
+            result.timezone = row.getString("timezone");
+            result.modification_date = row.getString("modification_date");
+            result.filter = new SimpleBloomFilter( GeoNameHasher.shape, new BitMapProducer() {
+
+                @Override
+                public void forEachBitMap(LongConsumer consumer) {
+                    LongBuffer lb = row.getBlob("bf").asLongBuffer();
+                    while( lb.hasRemaining()) {
+                        consumer.accept( lb.get() );
+                    }
+                }} );
+            return result;
+        }
     }
 
 }
