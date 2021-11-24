@@ -55,12 +55,14 @@ public class BloomSearcher implements Searcher {
 
             @Override
             public DecoratedKey apply(Row hit) {
-                ByteBuffer bb =  hit.clustering().bufferAt(0);
-                StringBuilder sb = new StringBuilder();
-                while (bb.hasRemaining() ) {
-                    sb.append( (char) bb.get() );
+                if (logger.isDebugEnabled()) {
+                    ByteBuffer bb =  hit.clustering().bufferAt(0);
+                    StringBuilder sb = new StringBuilder("Reading ");
+                    while (bb.hasRemaining() ) {
+                        sb.append( (char) bb.get() );
+                    }
+                    logger.debug(sb.toString());
                 }
-                System.out.println("Reading "+sb.toString());
                 return index.getBaseCfs().decorateKey(hit.clustering().bufferAt(0));
             }
         };
@@ -99,7 +101,7 @@ public class BloomSearcher implements Searcher {
         ExtendedIterator<Set<DecoratedKey>> maps = WrappedIterator.create(lst.iterator())
                 .mapWith(IndexKey::asMap)
                 .mapWith(idxMap -> {
-                    System.out.println( "Processing "+idxMap );
+                    logger.debug( "Processing {}", idxMap );
                     Set<DecoratedKey> mapSet = new HashSet<DecoratedKey>();
                     idxMap.getKeys()
                         .mapWith(idxKey -> {
@@ -109,7 +111,7 @@ public class BloomSearcher implements Searcher {
                         .forEach(row -> {
                             WrappedIterator.create(row).mapWith(row2Key).forEach(mapSet::add);
                             });
-                    System.out.println( String.format("Completed Returning %d entries", mapSet.size()));
+                    logger.debug( "Completed Returning {} entries", mapSet.size());
                     return mapSet;
                 });
 
@@ -126,7 +128,7 @@ public class BloomSearcher implements Searcher {
             while (maps.hasNext() && !result.isEmpty()) {
                 Set<DecoratedKey> nxt = maps.next();
                 result.retainAll(nxt);
-                System.out.println( String.format("Merge yielded %d entries", result.size()));
+                logger.debug( "Merge yielded {} entries", result.size());
             }
         }
 

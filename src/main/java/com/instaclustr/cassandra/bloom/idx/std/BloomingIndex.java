@@ -69,6 +69,9 @@ public class BloomingIndex implements Index {
     protected IndexMetadata metadata;
     private BloomingIndexSerde serde;
     private ColumnMetadata indexedColumn;
+    private final int m;
+    private final int n;
+    private final int k;
 
 
     public BloomingIndex(ColumnFamilyStore baseCfs, IndexMetadata indexDef)
@@ -85,6 +88,20 @@ public class BloomingIndex implements Index {
                 indexedColumn.isPrimaryKeyColumn() || indexedColumn.isStatic()){
             throw new IllegalArgumentException( "Bloom filter column may not be culstering column, complex column, "
                     + "counter column, partition key, primary key column, or static column");
+        }
+
+         m = parseInt( indexDef.options.get( "m" ), "m" );
+         n = parseInt( indexDef.options.get( "n" ), "n" );
+         k = parseInt( indexDef.options.get( "k" ), "k" );
+
+    }
+
+    private static int parseInt( String value, String option ) {
+        try {
+            return value == null ? 0 : Integer.parseInt( value );
+        } catch (NumberFormatException e )
+        {
+            throw new IllegalArgumentException( String.format("Value for option '%s' is not a number", option), e );
         }
     }
 
@@ -208,7 +225,7 @@ public class BloomingIndex implements Index {
     @Override
     public long getEstimatedResultRows()
     {
-        return serde.getEstimatedResultRows();
+        return serde.getEstimatedResultRows( m, k, n );
     }
 
     /**

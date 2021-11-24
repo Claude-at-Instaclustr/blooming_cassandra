@@ -29,10 +29,14 @@ import org.apache.cassandra.schema.ColumnMetadata;
 import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.jena.util.iterator.WrappedIterator;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import com.instaclustr.cassandra.bloom.idx.IndexKey;
 
 public class BloomingIndexer implements Indexer {
+
+    private static final Logger logger = LoggerFactory.getLogger(BloomingIndexer.class);
 
     private final DecoratedKey key;
     private final BloomingIndexSerde serde;
@@ -55,21 +59,22 @@ public class BloomingIndexer implements Indexer {
 
     @Override
     public void begin() {
-        System.out.println( "BEGIN");
+        logger.trace( "begin");
     }
 
     @Override
     public void partitionDelete(DeletionTime deletionTime) {
-        System.out.println( "DELETE");
+        logger.trace( "partitionDelete");
     }
 
     @Override
     public void rangeTombstone(RangeTombstone tombstone) {
-        System.out.println( "rangeTombstone");
+        logger.trace( "rangeTombstone");
     }
 
     @Override
     public void insertRow(Row row) {
+        logger.trace( "insertRow");
         /* single updates to the key only produce insert statements -- no deletes
          * we have to verify if there is already a record and read the existing bloom filter if so
          */
@@ -133,6 +138,7 @@ public class BloomingIndexer implements Indexer {
 
     @Override
     public void updateRow(Row oldRowData, Row newRowData) {
+        logger.trace( "updateRow");
         if (newRowData.isStatic()) {
             if (!oldRowData.isStatic()) {
                 removeRow(oldRowData);
@@ -173,6 +179,7 @@ public class BloomingIndexer implements Indexer {
 
     @Override
     public void removeRow(Row row) {
+        logger.trace( "removeRow");
         removeRow(row, null);
     }
 
@@ -199,7 +206,7 @@ public class BloomingIndexer implements Indexer {
 
     @Override
     public void finish() {
-        System.out.println( "FINISH");
+        logger.trace( "finish");
     }
 
 }

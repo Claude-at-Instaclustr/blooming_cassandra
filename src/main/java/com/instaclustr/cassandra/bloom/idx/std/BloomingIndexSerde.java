@@ -79,9 +79,47 @@ public class BloomingIndexSerde {
         return Optional.of(indexCfs);
     }
 
-    public long getEstimatedResultRows() {
-        // FIXME this must be adjusted by estimated number of items
-        return indexCfs.getMeanRowCount();
+    public long getEstimatedResultRows(int mInt, int kInt, int nInt) {
+        int buckets = indexCfs.getMeanRowCount();
+        if (buckets == 0) {
+            return 0;
+        }
+
+        double m = mInt;
+        double k = kInt;
+        double n = nInt;
+        // kn = number of bits requested from hasher
+        double kn = k*n;
+
+
+        // the probability of a collision when
+        // selecting from a population i in a range of [1; m] is:
+        //
+        //                        i
+        //                / m - 1 \
+        // q(i;m) =  1 - |  -----  |
+        //                \   m   /
+        //
+
+        // The probability that the ith integer randomly chosen from
+        // [1, m] will repeat a previous choice equals q(i − 1; m) so the
+        // total expected collisions in kn selections is
+        //
+        //      kn
+        //     =====                                    kn
+        //      \                               / m - 1 \
+        //       >    q(i - 1; m ) = kn - m + m|  ----- |
+        //      /                               \   m   /
+        //      =====
+        //      i = 1
+
+        double collisions = kn - m + m*Math.pow( (m-1)/m, kn);
+        // expected number of bits per entry
+        double bits = kn-collisions;
+        // number of byte sized buckets is number of bytes in the the container
+        double bucketsPerEntry= Math.min( bits, m/Byte.SIZE);
+
+        return Math.round( buckets / bucketsPerEntry );
     }
 
     public void truncate(long truncatedAt) {
@@ -131,7 +169,7 @@ public class BloomingIndexSerde {
 
     public void insert(IndexKey indexKey, DecoratedKey rowKey, Clustering<?> clustering, LivenessInfo info,
             WriteContext ctx) {
-        System.out.println( "Inserting "+indexKey );
+        logger.debug( "Inserting {}", indexKey );
         Clustering<?> indexCluster = buildIndexClustering(rowKey, clustering);
 
         DecoratedKey valueKey = getIndexKeyFor(indexKey.asKey());
@@ -146,7 +184,7 @@ public class BloomingIndexSerde {
      */
     public void delete(IndexKey indexKey, DecoratedKey rowKey, Clustering<?> clustering, DeletionTime deletedAt,
             WriteContext ctx) {
-        System.out.println( "Deleting "+indexKey );
+        logger.debug( "Deleting {}", indexKey );
         DecoratedKey valueKey = getIndexKeyFor(indexKey.asKey());
         Clustering<?> indexClustering = buildIndexClustering(rowKey, clustering);
         Row row = BTreeRow.emptyDeletedRow(indexClustering, Row.Deletion.regular(deletedAt));
