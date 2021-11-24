@@ -1,17 +1,35 @@
 package com.instaclustr.cassandra.bloom.idx.std;
 
+import java.nio.ByteBuffer;
 import java.util.Iterator;
+import java.util.NavigableSet;
+
 import org.apache.cassandra.db.Clustering;
+import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.db.DeletionTime;
 import org.apache.cassandra.db.LivenessInfo;
 import org.apache.cassandra.db.RangeTombstone;
+import org.apache.cassandra.db.ReadCommand;
+import org.apache.cassandra.db.ReadExecutionController;
+import org.apache.cassandra.db.SinglePartitionReadCommand;
 import org.apache.cassandra.db.WriteContext;
+import org.apache.cassandra.db.filter.ClusteringIndexNamesFilter;
+import org.apache.cassandra.db.filter.ColumnFilter;
+import org.apache.cassandra.db.filter.DataLimits;
+import org.apache.cassandra.db.filter.RowFilter;
 import org.apache.cassandra.db.rows.Cell;
 import org.apache.cassandra.db.rows.Row;
+import org.apache.cassandra.db.rows.Unfiltered;
+import org.apache.cassandra.db.rows.Unfiltered.Kind;
+import org.apache.cassandra.db.rows.UnfilteredRowIterator;
 import org.apache.cassandra.index.Index.Indexer;
 import org.apache.cassandra.index.transactions.IndexTransaction;
 import org.apache.cassandra.schema.ColumnMetadata;
+import org.apache.cassandra.schema.TableMetadata;
+import org.apache.cassandra.utils.FBUtilities;
+import org.apache.jena.util.iterator.WrappedIterator;
+
 import com.instaclustr.cassandra.bloom.idx.IndexKey;
 
 public class BloomingIndexer implements Indexer {
@@ -21,32 +39,75 @@ public class BloomingIndexer implements Indexer {
     private final ColumnMetadata indexedColumn;
     private final int nowInSec;
     private final WriteContext ctx;
+    private final BloomingIndex index;
 
-    public BloomingIndexer(final DecoratedKey key, final BloomingIndexSerde serde, final ColumnMetadata indexedColumn,
+
+    public BloomingIndexer(final DecoratedKey key, final BloomingIndex index, final BloomingIndexSerde serde, final ColumnMetadata indexedColumn,
             final int nowInSec, final WriteContext ctx, final IndexTransaction.Type transactionType) {
         this.key = key;
+        this.index = index;
         this.serde = serde;
         this.indexedColumn = indexedColumn;
         this.nowInSec = nowInSec;
         this.ctx = ctx;
+
     }
 
     @Override
     public void begin() {
+        System.out.println( "BEGIN");
     }
 
     @Override
     public void partitionDelete(DeletionTime deletionTime) {
-
+        System.out.println( "DELETE");
     }
 
     @Override
     public void rangeTombstone(RangeTombstone tombstone) {
+        System.out.println( "rangeTombstone");
     }
 
     @Override
     public void insertRow(Row row) {
-        insertRow(row, null);
+        /* single updates to the key only produce insert statements -- no deletes
+         * we have to verify if there is already a record and read the existing bloom filter if so
+         */
+
+        Clustering<?> clustering = row.clustering();
+        boolean insertOnly = index.getBaseCfs().isEmpty();
+        if (! insertOnly ) {
+            TableMetadata tableMetadata = index.getBaseCfs().metadata();
+            ColumnFilter columnFilter = ColumnFilter.selectionBuilder()
+                .add( indexedColumn ).build();
+            NavigableSet<Clustering<?>> names = FBUtilities.singleton(clustering, tableMetadata.comparator);
+            ClusteringIndexNamesFilter clusteringFilter = new ClusteringIndexNamesFilter(names, false);
+
+            SinglePartitionReadCommand dataCmd = SinglePartitionReadCommand.create(
+                  tableMetadata,
+                  nowInSec,
+                  key,
+                  clustering);
+
+            UnfilteredRowIterator rows = dataCmd.queryMemtableAndDisk(index.getBaseCfs(), dataCmd.executionController());
+            insertOnly = rows.isEmpty() || ! rows.columns().contains( index.getIndexedColumn() );
+            if (!insertOnly) {
+                Iterator<Row> rowIter = WrappedIterator.create( rows )
+                    .filterKeep( Unfiltered::isRow  )
+                    .mapWith( u -> {return ((Row) u).filter(columnFilter, tableMetadata);} );
+
+                if (rowIter.hasNext())
+                {
+                    updateRow( rowIter.next(), row );
+                } else {
+                    insertOnly = true;
+                }
+            }
+        }
+
+        if (insertOnly) {
+            insertRow(row, null);
+        }
     }
 
     private void insertRow(Row row, Iterator<IndexKey> iter) {
@@ -78,7 +139,6 @@ public class BloomingIndexer implements Indexer {
             }
             return;
         }
-
         byte[] oldBytes = BFUtils.extractCodes(oldRowData.getCell(indexedColumn).buffer());
         byte[] newBytes = BFUtils.extractCodes(newRowData.getCell(indexedColumn).buffer());
         int limit = oldBytes.length > newBytes.length ? oldBytes.length : newBytes.length;
@@ -139,7 +199,7 @@ public class BloomingIndexer implements Indexer {
 
     @Override
     public void finish() {
-        // TODO Auto-generated method stub
+        System.out.println( "FINISH");
     }
 
 }

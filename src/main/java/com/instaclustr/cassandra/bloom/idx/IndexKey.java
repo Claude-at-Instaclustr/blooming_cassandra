@@ -51,7 +51,7 @@ public class IndexKey implements Comparable<IndexKey> {
 
     @Override
     public String toString() {
-        return String.format( "IndexKey[%d, %2x]", position, code);
+        return String.format( "IndexKey[%d, 0x%02x]", position, code);
     }
 
     @Override

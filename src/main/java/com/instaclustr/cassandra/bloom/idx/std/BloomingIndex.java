@@ -15,10 +15,13 @@ import java.util.stream.StreamSupport;
 
 import org.apache.cassandra.cql3.Operator;
 import org.apache.cassandra.cql3.statements.schema.IndexTarget;
+import org.apache.cassandra.db.Clustering;
 import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.db.ReadCommand;
+import org.apache.cassandra.db.ReadExecutionController;
 import org.apache.cassandra.db.RegularAndStaticColumns;
+import org.apache.cassandra.db.SinglePartitionReadCommand;
 import org.apache.cassandra.db.SystemKeyspace;
 import org.apache.cassandra.db.WriteContext;
 import org.apache.cassandra.db.compaction.CompactionManager;
@@ -33,6 +36,7 @@ import org.apache.cassandra.db.marshal.IntegerType;
 import org.apache.cassandra.db.marshal.LongType;
 import org.apache.cassandra.db.partitions.PartitionIterator;
 import org.apache.cassandra.db.partitions.PartitionUpdate;
+import org.apache.cassandra.db.rows.UnfilteredRowIterator;
 import org.apache.cassandra.dht.LocalPartitioner;
 import org.apache.cassandra.exceptions.InvalidRequestException;
 import org.apache.cassandra.index.Index;
@@ -55,41 +59,17 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.google.common.collect.ImmutableSet;
+import com.instaclustr.cassandra.bloom.idx.IndexKey;
 
 public class BloomingIndex implements Index {
 
     private static final Logger logger = LoggerFactory.getLogger(BloomingIndex.class);
 
-    public final ColumnFamilyStore baseCfs;
+    private final ColumnFamilyStore baseCfs;
     protected IndexMetadata metadata;
     private BloomingIndexSerde serde;
     private ColumnMetadata indexedColumn;
 
-
-    /**
-     * Construct the TableMetadata for an index table, the clustering columns in the index table
-     * vary dependent on the kind of the indexed value.
-     * @param baseCfsMetadata
-     * @param indexMetadata
-     * @return
-     */
-    public static TableMetadata indexCfsMetadata(TableMetadata baseCfsMetadata, IndexMetadata indexMetadata)
-    {
-
-        TableMetadata.Builder builder =
-                TableMetadata.builder(baseCfsMetadata.keyspace, baseCfsMetadata.indexTableName(indexMetadata), baseCfsMetadata.id)
-                .kind(TableMetadata.Kind.INDEX)
-                .partitioner(new LocalPartitioner(LongType.instance))
-                .addPartitionKeyColumn("pos", Int32Type.instance)
-                .addPartitionKeyColumn("code", Int32Type.instance)
-                .addClusteringColumn("dataKey", BytesType.instance);
-
-        for( ColumnMetadata meta : baseCfsMetadata.primaryKeyColumns()) {
-            builder.addColumn(ColumnMetadata.regularColumn( meta.ksName, meta.cfName, meta.name.toString(), meta.type));
-        }
-
-        return builder.build().updateIndexTableMetadata(baseCfsMetadata.params);
-    }
 
     public BloomingIndex(ColumnFamilyStore baseCfs, IndexMetadata indexDef)
     {
@@ -103,7 +83,7 @@ public class BloomingIndex implements Index {
         if (indexedColumn.isClusteringColumn() || indexedColumn.isComplex() ||
                 indexedColumn.isCounterColumn() || indexedColumn.isPartitionKey() ||
                 indexedColumn.isPrimaryKeyColumn() || indexedColumn.isStatic()){
-            throw new IllegalArgumentException( "index column may not be culstering column, complex column, "
+            throw new IllegalArgumentException( "Bloom filter column may not be culstering column, complex column, "
                     + "counter column, partition key, primary key column, or static column");
         }
     }
@@ -113,6 +93,10 @@ public class BloomingIndex implements Index {
         return indexedColumn;
     }
 
+
+    public ColumnFamilyStore getBaseCfs() {
+        return baseCfs;
+    }
 
     @Override
     public void register(IndexRegistry registry)
@@ -286,7 +270,7 @@ public class BloomingIndex implements Index {
             final WriteContext ctx,
             final IndexTransaction.Type transactionType)
     {
-        return columns.contains(indexedColumn) ? new BloomingIndexer( key, serde, indexedColumn, nowInSec, ctx, transactionType ) : null;
+        return columns.contains(indexedColumn) ? new BloomingIndexer( key, this, serde, indexedColumn, nowInSec, ctx, transactionType ) : null;
     }
 
     private boolean isBuilt()
@@ -341,6 +325,8 @@ public class BloomingIndex implements Index {
                 .map(SSTableReader::toString)
                 .collect(Collectors.joining(", "));
     }
+
+
 }
 
 

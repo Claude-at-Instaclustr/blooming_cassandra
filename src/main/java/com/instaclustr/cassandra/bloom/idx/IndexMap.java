@@ -65,7 +65,7 @@ public class IndexMap {
     public String toString() {
         StringBuilder sb = new StringBuilder( String.format( "IndexMap[%d, [", position, hashCode() ));
         for (int i=0;i<codes.length;i++) {
-            sb.append( String.format( "%s %2x",  i>0? ",":"", codes[i]));
+            sb.append( String.format( "%s 0x%02x",  i>0? ",":"", codes[i]));
         }
         return sb.append(" ]]").toString();
     }

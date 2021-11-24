@@ -8,6 +8,8 @@ import java.util.List;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.function.Function;
+
+import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.db.ReadCommand;
 import org.apache.cassandra.db.ReadExecutionController;
@@ -37,7 +39,7 @@ public class BloomSearcher implements Searcher {
     private final RowFilter.Expression expression;
     private final BloomingIndexSerde serde;
     private final BloomingIndex index;
-    protected final ReadCommand command;
+    private final ReadCommand command;
 
     private Function<Row, DecoratedKey> row2Key;
 
@@ -59,7 +61,7 @@ public class BloomSearcher implements Searcher {
                     sb.append( (char) bb.get() );
                 }
                 System.out.println("Reading "+sb.toString());
-                return index.baseCfs.decorateKey(hit.clustering().bufferAt(0));
+                return index.getBaseCfs().decorateKey(hit.clustering().bufferAt(0));
             }
         };
     }
@@ -76,10 +78,10 @@ public class BloomSearcher implements Searcher {
             @Override
             public UnfilteredRowIterator apply(DecoratedKey hit) {
                 ColumnFilter extendedFilter = getExtendedFilter(command.columnFilter());
-                SinglePartitionReadCommand dataCmd = SinglePartitionReadCommand.create(index.baseCfs.metadata(),
+                SinglePartitionReadCommand dataCmd = SinglePartitionReadCommand.create(index.getBaseCfs().metadata(),
                         command.nowInSec(), extendedFilter, command.rowFilter(), DataLimits.NONE, hit,
                         command.clusteringIndexFilter(hit), null);
-                return dataCmd.queryMemtableAndDisk(index.baseCfs, executionController);
+                return dataCmd.queryMemtableAndDisk(index.getBaseCfs(), executionController);
             };
         };
 

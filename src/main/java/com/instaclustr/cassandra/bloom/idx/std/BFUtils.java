@@ -68,7 +68,7 @@ public class BFUtils {
     }
 
     public static ExtendedIterator<IndexKey> getIndexKeys( ByteBuffer bloomFilter ) {
-        return getIndexKeys( extractCodes( bloomFilter )).filterDrop( IndexKey::isZero );
+        return getIndexKeys( extractCodes( bloomFilter ));
     }
 
     public static ExtendedIterator<IndexKey> getIndexKeys( final byte[] codes ) {
@@ -89,7 +89,7 @@ public class BFUtils {
                 }
                 throw new NoSuchElementException();
             }
-        } );
+        } ).filterDrop( IndexKey::isZero );
     }
 
     /**

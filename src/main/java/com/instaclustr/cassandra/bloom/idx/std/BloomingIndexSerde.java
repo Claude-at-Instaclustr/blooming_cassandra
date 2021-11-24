@@ -62,10 +62,6 @@ public class BloomingIndexSerde {
                 .addPartitionKeyColumn("code", Int32Type.instance)
                 .addClusteringColumn("dataKey", BytesType.instance);
 
-//        for( ColumnMetadata meta : baseCfsMetadata.primaryKeyColumns()) {
-//            builder.addColumn(ColumnMetadata.regularColumn( meta.ksName, meta.cfName, meta.name.toString(), meta.type));
-//        }
-
         TableMetadataRef tableRef = TableMetadataRef.forOfflineTools(builder.build().updateIndexTableMetadata(baseCfsMetadata.params));
 
 

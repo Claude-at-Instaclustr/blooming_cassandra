@@ -146,7 +146,7 @@ public class GeoName {
 
         private static String fmt = "INSERT INTO %%s (geonameid, name, asciiname, alternatenames, latitude, longitude, "
                 + "feature_class, feature_code, country_code, cc2, admin1_code, admin2_code, admin3_code, admin4_code, "
-                + "population, elevation, dem, timezone, modification_date, bf ) VALUES "
+                + "population, elevation, dem, timezone, modification_date, filter ) VALUES "
                 + "($$%s$$,$$%s$$,$$%s$$,$$%s$$,$$%s$$,$$%s$$,$$%s$$,$$%s$$,$$%s$$,$$%s$$,$$%s$$,$$%s$$,$$%s$$,$$%s$$,$$%s$$,$$%s$$,$$%s$$,$$%s$$,$$%s$$,%s);";
 
         private static String qry = "SELECT geonameid, name, asciiname, alternatenames, latitude, longitude, "
@@ -224,7 +224,7 @@ public class GeoName {
 
                 @Override
                 public void forEachBitMap(LongConsumer consumer) {
-                    LongBuffer lb = row.getBlob("bf").asLongBuffer();
+                    LongBuffer lb = row.getBlob("filter").asLongBuffer();
                     while( lb.hasRemaining()) {
                         consumer.accept( lb.get() );
                     }
