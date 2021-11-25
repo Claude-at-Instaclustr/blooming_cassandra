@@ -19,6 +19,11 @@
 	<name>Blooming-Cassandra</name>
 	<description>Implementation of a Bloom filter indexing in Cassandra </description>
 	<dependencies>
+
+		<dependency>
+			<groupId>org.apache.cassandra</groupId>
+			<artifactId>cassandra-all</artifactId>
+		</dependency>
 		<dependency>
 			<groupId>com.datastax.cassandra</groupId>
 			<artifactId>cassandra-driver-core</artifactId>
@@ -117,16 +122,16 @@
 		<cassandra-version>4.0.1</cassandra-version>
 	</properties>
 	<repositories>
-	<repository>
-  <id>apache.snapshots</id>
-  <name>Apache Development Snapshot Repository</name>
-  <url>https://repository.apache.org/content/repositories/snapshots/</url>
-  <releases>
-    <enabled>false</enabled>
-  </releases>
-  <snapshots>
-    <enabled>true</enabled>
-  </snapshots>
-</repository>
+		<repository>
+			<id>apache.snapshots</id>
+			<name>Apache Development Snapshot Repository</name>
+			<url>https://repository.apache.org/content/repositories/snapshots/</url>
+			<releases>
+				<enabled>false</enabled>
+			</releases>
+			<snapshots>
+				<enabled>true</enabled>
+			</snapshots>
+		</repository>
 	</repositories>
 </project>
