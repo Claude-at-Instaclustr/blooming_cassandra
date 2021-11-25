@@ -1,10 +1,24 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package com.instaclustr.cassandra.bloom.idx.std;
 
 import java.nio.ByteBuffer;
 import java.util.Collections;
 import java.util.HashSet;
-import java.util.Iterator;
-import java.util.List;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.function.Function;
@@ -19,33 +33,63 @@ import org.apache.cassandra.db.filter.DataLimits;
 import org.apache.cassandra.db.filter.RowFilter;
 import org.apache.cassandra.db.partitions.UnfilteredPartitionIterator;
 import org.apache.cassandra.db.rows.Row;
-import org.apache.cassandra.db.rows.RowIterator;
 import org.apache.cassandra.db.rows.UnfilteredRowIterator;
 import org.apache.cassandra.db.rows.UnfilteredRowIterators;
 import org.apache.cassandra.index.Index.Searcher;
 import org.apache.cassandra.index.internal.CassandraIndexSearcher;
+import org.apache.cassandra.schema.ColumnMetadata;
 import org.apache.cassandra.schema.TableMetadata;
 import org.apache.jena.util.iterator.ExtendedIterator;
 import org.apache.jena.util.iterator.WrappedIterator;
-import org.assertj.core.util.Arrays;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.instaclustr.cassandra.bloom.idx.IndexKey;
 
+/**
+ * Handles searching the index for mathing filters.
+ */
 public class BloomSearcher implements Searcher {
     private static final Logger logger = LoggerFactory.getLogger(CassandraIndexSearcher.class);
 
+    /**
+     * The expression to use for the search.
+     */
     private final RowFilter.Expression expression;
+    /**
+     * The Serde for index I/O.
+     */
     private final BloomingIndexSerde serde;
-    private final BloomingIndex index;
+    /**
+     * The read command being executed.
+     */
     private final ReadCommand command;
+    /**
+     * the indexed column in the base table.
+     */
+    private final ColumnMetadata indexedColumn;
+    /**
+     * the base table.
+     */
+    private final ColumnFamilyStore baseCfs;
 
+    /**
+     * A function to convert a row from the base table into the a key for the row.
+     */
     private Function<Row, DecoratedKey> row2Key;
 
-    public BloomSearcher(BloomingIndex index, BloomingIndexSerde serde, ReadCommand command,
+    /**
+     * Constructor.
+     * @param indexedColumn the indexed column in the base table.
+     * @param baseCfs the base table.
+     * @param serde The Serde for index I/O.
+     * @param command The read command being executed.
+     * @param expression The expression to use for the search.
+     */
+    public BloomSearcher(final ColumnMetadata indexedColumn, final ColumnFamilyStore baseCfs  /*BloomingIndex index*/, BloomingIndexSerde serde, ReadCommand command,
             RowFilter.Expression expression) {
-        this.index = index;
+        this.baseCfs = baseCfs;
+        this.indexedColumn = indexedColumn;
         this.serde = serde;
         this.command = command;
         this.expression = expression;
@@ -63,15 +107,12 @@ public class BloomSearcher implements Searcher {
                     }
                     logger.debug(sb.toString());
                 }
-                return index.getBaseCfs().decorateKey(hit.clustering().bufferAt(0));
+                return baseCfs.decorateKey(hit.clustering().bufferAt(0));
             }
         };
     }
 
     @Override
-    @SuppressWarnings("resource") // Both the OpOrder and 'indexIter' are closed on exception, or through the
-    // closing of the result
-    // of this method.
     public UnfilteredPartitionIterator search(ReadExecutionController executionController) {
         // Create a function to convert DecoratedKey from the index to a Row from the
         // base table.
@@ -80,37 +121,37 @@ public class BloomSearcher implements Searcher {
             @Override
             public UnfilteredRowIterator apply(DecoratedKey hit) {
                 ColumnFilter extendedFilter = getExtendedFilter(command.columnFilter());
-                SinglePartitionReadCommand dataCmd = SinglePartitionReadCommand.create(index.getBaseCfs().metadata(),
+                SinglePartitionReadCommand dataCmd = SinglePartitionReadCommand.create(baseCfs.metadata(),
                         command.nowInSec(), extendedFilter, command.rowFilter(), DataLimits.NONE, hit,
                         command.clusteringIndexFilter(hit), null);
-                return dataCmd.queryMemtableAndDisk(index.getBaseCfs(), executionController);
+                return dataCmd.queryMemtableAndDisk(baseCfs, executionController);
             };
         };
 
-        // generate the sorted set of IndexKeys for records to retrieve from the index
-        Set<IndexKey> lst = new TreeSet<IndexKey>();
-        BFUtils.getIndexKeys(expression.getIndexValue()).forEach(lst::add);
+        // generate the sorted set of IndexKeys for the Bloom filter specified in the query
+        Set<IndexKey> queryKeys = new TreeSet<IndexKey>();
+        BFUtils.getIndexKeys(expression.getIndexValue()).forEach(queryKeys::add);
 
         /*
          * For each key in the index set, create the associated IndexMap and then
-         * process each IndexKey in the IndexMap collecting the base table key values
+         * process each IndexKey in the IndexMap collecting the base table keys
          * from the index in a set (mapSet).
          *
-         * The result is an iterator over the set of solutions for each IndexKey in lst.
+         * The result is an iterator over the set of solutions for each IndexKey in queryKeys.
          */
-        ExtendedIterator<Set<DecoratedKey>> maps = WrappedIterator.create(lst.iterator())
+        ExtendedIterator<Set<DecoratedKey>> maps = WrappedIterator.create(queryKeys.iterator())
                 .mapWith(IndexKey::asMap)
                 .mapWith(idxMap -> {
                     logger.debug( "Processing {}", idxMap );
                     Set<DecoratedKey> mapSet = new HashSet<DecoratedKey>();
                     idxMap.getKeys()
-                        .mapWith(idxKey -> {
-                            return UnfilteredRowIterators.filter(serde.read(idxKey, command, executionController),
+                    .mapWith(idxKey -> {
+                        return UnfilteredRowIterators.filter(serde.read(idxKey, command, executionController),
                                 command.nowInSec());
-                            })
-                        .forEach(row -> {
-                            WrappedIterator.create(row).mapWith(row2Key).forEach(mapSet::add);
-                            });
+                    })
+                    .forEach(row -> {
+                        WrappedIterator.create(row).mapWith(row2Key).forEach(mapSet::add);
+                    });
                     logger.debug( "Completed Returning {} entries", mapSet.size());
                     return mapSet;
                 });
@@ -132,29 +173,44 @@ public class BloomSearcher implements Searcher {
             }
         }
 
-        return createUnfilteredPartitionIterator(WrappedIterator.create(result.iterator()).mapWith(key2RowIter));
+        // return a PartitionIterator that contains all the results.
+        return createUnfilteredPartitionIterator(
+                WrappedIterator.create(result.iterator()).mapWith(key2RowIter),
+                command.metadata());
 
     }
 
+    /**
+     * Ensures that the ColumnFilter includes the indexed column.
+     * @param initialFilter the filter to check.
+     * @return A ColumnFilter that includes the indexed column.
+     */
     private ColumnFilter getExtendedFilter(ColumnFilter initialFilter) {
-        if (command.columnFilter().fetches(index.getIndexedColumn()))
+        if (initialFilter.fetches(indexedColumn))
             return initialFilter;
 
         ColumnFilter.Builder builder = ColumnFilter.selectionBuilder();
         builder.addAll(initialFilter.fetchedColumns());
-        builder.add(index.getIndexedColumn());
+        builder.add(indexedColumn);
         return builder.build();
     }
 
-    private UnfilteredPartitionIterator createUnfilteredPartitionIterator(
-            ExtendedIterator<UnfilteredRowIterator> a_rowIter) {
+    /**
+     * Create an UnfilteredPartitionIterator from an UnfilteredRowIterator.
+     *
+     * @param theRowIterator the unfilteredRowIterator to use.
+     * @return an UnfilteredPartitionIterator that will return the rows from the UnfilteredRowIterator.
+     */
+    private static UnfilteredPartitionIterator createUnfilteredPartitionIterator(
+            ExtendedIterator<UnfilteredRowIterator> theRowIterator, TableMetadata theMetadata) {
 
         return new UnfilteredPartitionIterator() {
-            ExtendedIterator<UnfilteredRowIterator> rowIter = a_rowIter;
+            ExtendedIterator<UnfilteredRowIterator> rowIter = theRowIterator;
+            TableMetadata metadata = theMetadata;
 
             @Override
             public TableMetadata metadata() {
-                return command.metadata();
+                return metadata;
             }
 
             @Override
@@ -176,7 +232,6 @@ public class BloomSearcher implements Searcher {
             public void close() {
                 rowIter.close();
             }
-
         };
     }
 

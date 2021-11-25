@@ -1,19 +1,13 @@
 package com.instaclustr.cassandra.bloom.idx.std;
 
-import java.lang.reflect.Array;
 import java.nio.ByteBuffer;
 import java.nio.LongBuffer;
-import java.util.ArrayList;
 import java.util.Iterator;
-import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.function.Function;
-import java.util.stream.Collectors;
-
 import org.apache.cassandra.db.CBuilder;
 import org.apache.cassandra.db.Clustering;
 import org.apache.cassandra.db.ClusteringComparator;
-import org.apache.cassandra.db.rows.Cell;
 import org.apache.jena.util.iterator.ExtendedIterator;
 import org.apache.jena.util.iterator.WrappedIterator;
 
@@ -61,7 +55,7 @@ public class BFUtils {
             for (int i = 0; i < Long.BYTES; i++) {
                 byte code = (byte) (word & 0xFF);
                 word = word >> Byte.SIZE;
-                codes[pos++] = code;
+            codes[pos++] = code;
             }
         }
         return codes;

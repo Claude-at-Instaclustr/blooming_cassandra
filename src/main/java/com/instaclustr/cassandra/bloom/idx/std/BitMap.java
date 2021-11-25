@@ -16,8 +16,6 @@
  */
 package com.instaclustr.cassandra.bloom.idx.std;
 
-import java.util.Objects;
-
 /**
  * Contains functions to convert {@code int} indices into Bloom filter bit positions and visa versa.
  *

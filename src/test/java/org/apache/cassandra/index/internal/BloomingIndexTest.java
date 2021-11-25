@@ -21,6 +21,7 @@ package org.apache.cassandra.index.internal;
  */
 
 import com.instaclustr.cassandra.bloom.idx.std.BitMap;
+import com.instaclustr.cassandra.bloom.idx.std.BloomingIndex;
 import com.instaclustr.geonames.GeoName;
 import com.instaclustr.geonames.GeoNameHasher;
 import com.instaclustr.geonames.GeoNameIterator;
@@ -38,14 +39,16 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
+import java.util.HashMap;
+import java.util.Map;
+
 public class BloomingIndexTest extends CQLTester
 {
     private static final String table = "CREATE TABLE %s (geonameid text, name text, asciiname text, alternatenames text, latitude text, longitude text, feature_class text,feature_code text,country_code text,cc2 text,admin1_code text,admin2_code text, admin3_code text, admin4_code text, population text, elevation text, dem text, timezone text, modification_date text,filter blob,PRIMARY KEY (geonameid ));";
-    private static final String index = "CREATE CUSTOM INDEX ON %s(filter) USING 'com.instaclustr.cassandra.bloom.idx.std.BloomingIndex'";
+    private static final String index = "CREATE CUSTOM INDEX ON %s(filter) USING 'com.instaclustr.cassandra.bloom.idx.std.BloomingIndex'"
+            + " WITH OPTIONS = {'numberOfBits':'302', 'numberofItems':'10', 'numberOfFunctions':'21' }";
 
     public BloomingIndexTest() {
-
-
     }
 
     private static void assertEqual(BloomFilter expected, BloomFilter actual) {
@@ -91,6 +94,24 @@ public class BloomingIndexTest extends CQLTester
         assertEqual( expected.filter, actual.filter );
 
     }
+
+    @Test
+    public void testOptionParser() {
+        Map<String,String> options = new HashMap<String,String>();
+        int i = BloomingIndex.parseInt(options, "missing");
+        assertEquals( 0, i );
+        options.put( "one", "1" );
+        i = BloomingIndex.parseInt(options, "one");
+        assertEquals( 1, i );
+        options.put( "float", "2.3");
+        try {
+            BloomingIndex.parseInt(options, "float");
+            fail("Should have thrown IllegalArgumentException");
+        } catch (IllegalArgumentException expected) {
+            // do nothing.
+        }
+    }
+
     @Test
     public void testInsertAndRetrieval() throws Throwable
     {

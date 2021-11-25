@@ -6,6 +6,7 @@ import java.nio.ByteBuffer;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.Callable;
 import java.util.concurrent.Future;
@@ -15,13 +16,10 @@ import java.util.stream.StreamSupport;
 
 import org.apache.cassandra.cql3.Operator;
 import org.apache.cassandra.cql3.statements.schema.IndexTarget;
-import org.apache.cassandra.db.Clustering;
 import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.db.ReadCommand;
-import org.apache.cassandra.db.ReadExecutionController;
 import org.apache.cassandra.db.RegularAndStaticColumns;
-import org.apache.cassandra.db.SinglePartitionReadCommand;
 import org.apache.cassandra.db.SystemKeyspace;
 import org.apache.cassandra.db.WriteContext;
 import org.apache.cassandra.db.compaction.CompactionManager;
@@ -29,15 +27,8 @@ import org.apache.cassandra.db.filter.RowFilter;
 import org.apache.cassandra.db.lifecycle.SSTableSet;
 import org.apache.cassandra.db.lifecycle.View;
 import org.apache.cassandra.db.marshal.AbstractType;
-import org.apache.cassandra.db.marshal.ByteType;
-import org.apache.cassandra.db.marshal.BytesType;
-import org.apache.cassandra.db.marshal.Int32Type;
-import org.apache.cassandra.db.marshal.IntegerType;
-import org.apache.cassandra.db.marshal.LongType;
 import org.apache.cassandra.db.partitions.PartitionIterator;
 import org.apache.cassandra.db.partitions.PartitionUpdate;
-import org.apache.cassandra.db.rows.UnfilteredRowIterator;
-import org.apache.cassandra.dht.LocalPartitioner;
 import org.apache.cassandra.exceptions.InvalidRequestException;
 import org.apache.cassandra.index.Index;
 import org.apache.cassandra.index.IndexRegistry;
@@ -49,8 +40,6 @@ import org.apache.cassandra.io.sstable.ReducingKeyIterator;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
 import org.apache.cassandra.schema.ColumnMetadata;
 import org.apache.cassandra.schema.IndexMetadata;
-import org.apache.cassandra.schema.TableMetadata;
-import org.apache.cassandra.schema.TableMetadataRef;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.Pair;
 import org.apache.cassandra.utils.concurrent.Refs;
@@ -59,91 +48,170 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.google.common.collect.ImmutableSet;
-import com.instaclustr.cassandra.bloom.idx.IndexKey;
 
+/**
+ * An index that implements a multidimensional Bloom filter index.
+ * <p>
+ * The index is applied to Blob columns that contain Bloom filters.  Bloom filters are represented
+ * as an array of bytes where enabled bits in the bytes represent enabled bits in the complete filter.
+ * The ordering of the bytes is not specified but must be the same for all filters written to the index.
+ * </p>
+ *
+ * <p>Bloom filters may contain multiple items and do not have to be composed from data stored in the row.</p>
+ *
+ * <h2>False Positives</h2>
+ *
+ * <p>By their nature Bloom filters can yield false positives.  Therefore, values returned by this index
+ * should be verified to ensure they actually meet the expected criteria</p>
+ *
+ * <h2>Example operational flow</h2>
+ *
+ * <h3>Assumptions</h3>
+ * <ol>
+ * <li>There is an object that has multiple names and a location.</li>
+ * <li>There is a Cassandra table that stores that object, has a blob column to store the Bloom filter,
+ * and has a {@code BloomingIndex} on that column.</li>
+ * </ol>
+ *
+ * <h3>Workflow</h3>
+ * <ol>
+ * <li> A Bloom filter is constructed for each row using all the alternate names and the location
+ * for the object</li>
+ * <li> The rows are added to the table.</li>
+ * <li> We want to find all things names "Las Vegas" that are the "US" so we construct Bloom filter
+ * from the values "Las Vegas" and "US"</li>
+ * <li> We convert the Bloom filter byte array into the Cassandra blob format.</li>
+ * <li> We perform a search on the table with the query
+ * {@code SELECT * FROM table WHERE bloomFilterColumn = filterBlob}</li>
+ * <li> For each returned row we verify that one of the alternate names is "Las Vegas" and that the
+ * location is "US".</li>
+ * </ol>
+ *
+ * <h2>Options</h2>
+ *
+ * <p>The following options may be specified.  If one is specified all should be specified.  If all
+ * are specified they are used in the calculation to determine how many rows this index is applied to.
+ * If they are not specified the index is assumed to apply to all rows in the base table.</p>
+ *
+ * <dl>
+ * <dt>numberOfBits</dt>
+ * <dd>
+ * The maximum number of bits in a filter.  Often called {@code m} when describing Bloom filters.
+ * </dd>
+ * <dt>numberOfFunctions</dt>
+ * <dd>
+ * The number of hash functions applied to an item as it is added to the Bloom filter.  Often
+ * called {@code k} when describing Bloom filters.
+ * </dd>
+ * <dt>numberOfItems</dt>
+ * <dd>
+ * The average number of items in each Bloom filter added to the index.  Often
+ * called {@code n} when describing Bloom filters.
+ * </dd>
+ * </dl>
+ *
+ */
 public class BloomingIndex implements Index {
 
     private static final Logger logger = LoggerFactory.getLogger(BloomingIndex.class);
 
+    /**
+     * The a base table where the data are stored.
+     */
     private final ColumnFamilyStore baseCfs;
-    protected IndexMetadata metadata;
-    private BloomingIndexSerde serde;
+    /**
+     * The name of the index column in the base table
+     */
     private ColumnMetadata indexedColumn;
-    private final int m;
-    private final int n;
-    private final int k;
+    /**
+     * The metadata for the index.
+     */
+    protected IndexMetadata metadata;
+    /**
+     * The Serde to use to read/write the index table.
+     */
+    private BloomingIndexSerde serde;
+    /**
+     * The maximum number of bits in the Bloom filter (May be 0.0)
+     */
+    private final double m;
+    /**
+     * The maximum number of hash functions used for each item in the Bloom filter (May be 0.0)
+     */
+    private final double k;
+    /**
+     * The maximum number of items the Bloom filter (May be 0.0)
+     */
+    private final double n;
 
-
-    public BloomingIndex(ColumnFamilyStore baseCfs, IndexMetadata indexDef)
-    {
+    /**
+     * Constructor
+     * @param baseCfs  The the base table.
+     * @param indexDef the the index definition.
+     */
+    public BloomingIndex(ColumnFamilyStore baseCfs, IndexMetadata indexDef) {
         this.baseCfs = baseCfs;
         this.metadata = indexDef;
 
-        serde = new BloomingIndexSerde( baseCfs, indexDef );
+        serde = new BloomingIndexSerde(baseCfs, indexDef);
 
         Pair<ColumnMetadata, IndexTarget.Type> target = TargetParser.parse(baseCfs.metadata(), indexDef);
         indexedColumn = target.left;
-        if (indexedColumn.isClusteringColumn() || indexedColumn.isComplex() ||
-                indexedColumn.isCounterColumn() || indexedColumn.isPartitionKey() ||
-                indexedColumn.isPrimaryKeyColumn() || indexedColumn.isStatic()){
-            throw new IllegalArgumentException( "Bloom filter column may not be culstering column, complex column, "
+        if (indexedColumn.isClusteringColumn() || indexedColumn.isComplex() || indexedColumn.isCounterColumn()
+                || indexedColumn.isPartitionKey() || indexedColumn.isPrimaryKeyColumn() || indexedColumn.isStatic()) {
+            throw new IllegalArgumentException("Bloom filter column may not be culstering column, complex column, "
                     + "counter column, partition key, primary key column, or static column");
         }
 
-         m = parseInt( indexDef.options.get( "m" ), "m" );
-         n = parseInt( indexDef.options.get( "n" ), "n" );
-         k = parseInt( indexDef.options.get( "k" ), "k" );
+        // parse ints but store as doubles.
+        m = parseInt(indexDef.options, "numberOfBits");
+        n = parseInt(indexDef.options, "numberOfItems");
+        k = parseInt(indexDef.options, "numberOfFunctions");
 
     }
 
-    private static int parseInt( String value, String option ) {
+    /**
+     * Parses integer values from a map of options.
+     * @param options the Map of options name-value pairs
+     * @param option the option to extract the value for.
+     * @return the option value or 0 (zero) if the value was not set in the map.
+     * @throws IllegalArgumentexception if the option value could not be parsed as an integer.
+     */
+    public static int parseInt(Map<String, String> options, String option) {
+        String value = options.get(option);
         try {
-            return value == null ? 0 : Integer.parseInt( value );
-        } catch (NumberFormatException e )
-        {
-            throw new IllegalArgumentException( String.format("Value for option '%s' is not a number", option), e );
+            return value == null ? 0 : Integer.parseInt(value);
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException(String.format("Value for option '%s' is not an integer", option), e);
         }
     }
 
-    public ColumnMetadata getIndexedColumn()
-    {
-        return indexedColumn;
-    }
-
-
-    public ColumnFamilyStore getBaseCfs() {
-        return baseCfs;
-    }
-
     @Override
-    public void register(IndexRegistry registry)
-    {
+    public void register(IndexRegistry registry) {
         registry.registerIndex(this);
     }
 
     @Override
-    public Callable<?> getInitializationTask()
-    {
-        // if we're just linking in the index on an already-built index post-restart or if the base
-        // table is empty we've nothing to do. Otherwise, submit for building via SecondaryIndexBuilder
+    public Callable<?> getInitializationTask() {
+        // if we're just linking in the index on an already-built index post-restart or
+        // if the base
+        // table is empty we've nothing to do. Otherwise, submit for building via
+        // SecondaryIndexBuilder
         return isBuilt() || baseCfs.isEmpty() ? null : getBuildIndexTask();
     }
 
     @Override
-    public IndexMetadata getIndexMetadata()
-    {
+    public IndexMetadata getIndexMetadata() {
         return metadata;
     }
 
     @Override
-    public Optional<ColumnFamilyStore> getBackingTable()
-    {
-        return serde.getBackingTable();
+    public Optional<ColumnFamilyStore> getBackingTable() {
+        return Optional.of(serde.getBackingTable());
     }
 
     @Override
-    public Callable<Void> getBlockingFlushTask()
-    {
+    public Callable<Void> getBlockingFlushTask() {
         return () -> {
             serde.forceBlockingFlush();
             return null;
@@ -151,8 +219,7 @@ public class BloomingIndex implements Index {
     }
 
     @Override
-    public Callable<?> getInvalidateTask()
-    {
+    public Callable<?> getInvalidateTask() {
         return () -> {
             serde.invalidate();
             return null;
@@ -160,8 +227,7 @@ public class BloomingIndex implements Index {
     }
 
     @Override
-    public Callable<?> getMetadataReloadTask(IndexMetadata indexDef)
-    {
+    public Callable<?> getMetadataReloadTask(IndexMetadata indexDef) {
         return () -> {
             serde.reload();
             return null;
@@ -169,22 +235,18 @@ public class BloomingIndex implements Index {
     }
 
     @Override
-    public void validate(ReadCommand command) throws InvalidRequestException
-    {
+    public void validate(ReadCommand command) throws InvalidRequestException {
         Optional<RowFilter.Expression> target = getTargetExpression(command.rowFilter().getExpressions());
 
-        if (target.isPresent())
-        {
+        if (target.isPresent()) {
             ByteBuffer indexValue = target.get().getIndexValue();
             checkFalse(indexValue.remaining() > FBUtilities.MAX_UNSIGNED_SHORT,
                     "Index expression values may not be larger than 64K");
         }
     }
 
-
     @Override
-    public Callable<?> getTruncateTask(final long truncatedAt)
-    {
+    public Callable<?> getTruncateTask(final long truncatedAt) {
         return () -> {
             serde.truncate(truncatedAt);
             return null;
@@ -192,71 +254,74 @@ public class BloomingIndex implements Index {
     }
 
     @Override
-    public boolean shouldBuildBlocking()
-    {
-        // built-in indexes are always included in builds initiated from SecondaryIndexManager
+    public boolean shouldBuildBlocking() {
+        // built-in indexes are always included in builds initiated from
+        // SecondaryIndexManager
         return true;
     }
 
     @Override
-    public boolean dependsOn(ColumnMetadata column)
-    {
+    public boolean dependsOn(ColumnMetadata column) {
         return indexedColumn.name.equals(column.name);
     }
 
     @Override
-    public boolean supportsExpression(ColumnMetadata column, Operator operator)
-    {
-        return indexedColumn.name.equals(column.name)
-                && operator == Operator.EQ;
+    public boolean supportsExpression(ColumnMetadata column, Operator operator) {
+        return indexedColumn.name.equals(column.name) && operator == Operator.EQ;
     }
 
-    private boolean supportsExpression(RowFilter.Expression expression)
-    {
+    /**
+     * Determine if this index can provide a searcher for a RowFilter Expression.
+     * @param expression the Row.Filter expression.
+     * @return {@code true} if this filter supports the expression, {@code false} otherwise.
+     * @see #supportsExpression(ColumnMetadata, Operator)
+     */
+    private boolean supportsExpression(RowFilter.Expression expression) {
         return supportsExpression(expression.column(), expression.operator());
     }
 
     @Override
-    public AbstractType<?> customExpressionValueType()
-    {
+    public AbstractType<?> customExpressionValueType() {
         return null;
     }
 
     @Override
-    public long getEstimatedResultRows()
-    {
-        return serde.getEstimatedResultRows( m, k, n );
+    public long getEstimatedResultRows() {
+        // If any of the parameters are not set and there is data in the index
+        // then serde.getEstimatedResultRows() will return -1.
+        // in this case we asume the index is used on all the rows in the base table.
+        long result = serde.getEstimatedResultRows(m, k, n);
+        return result == -1 ? baseCfs.getMeanRowCount() : result;
     }
 
     /**
      * No post processing of query results, just return them unchanged
      */
     @Override
-    public BiFunction<PartitionIterator, ReadCommand, PartitionIterator> postProcessorFor(ReadCommand command)
-    {
+    public BiFunction<PartitionIterator, ReadCommand, PartitionIterator> postProcessorFor(ReadCommand command) {
         return (partitionIterator, readCommand) -> partitionIterator;
     }
 
     @Override
-    public RowFilter getPostIndexQueryFilter(RowFilter filter)
-    {
-        return getTargetExpression(filter.getExpressions()).map(filter::without)
-                .orElse(filter);
+    public RowFilter getPostIndexQueryFilter(RowFilter filter) {
+        return getTargetExpression(filter.getExpressions()).map(filter::without).orElse(filter);
     }
 
-    private Optional<RowFilter.Expression> getTargetExpression(List<RowFilter.Expression> expressions)
-    {
+    /**
+     * Finds the first RowFilter.Expression that this index supports
+     * @param expressions a list of RowFilter Expressions to check.
+     * @return the first match or an empty optional.
+     */
+    private Optional<RowFilter.Expression> getTargetExpression(List<RowFilter.Expression> expressions) {
         return expressions.stream().filter(this::supportsExpression).findFirst();
     }
 
     @Override
-    public Index.Searcher searcherFor(ReadCommand command)
-    {
+    public Index.Searcher searcherFor(ReadCommand command) {
         Optional<RowFilter.Expression> target = getTargetExpression(command.rowFilter().getExpressions());
 
-        if (target.isPresent())
-        {
-            return new BloomSearcher( this, serde, command, target.get());
+        if (target.isPresent()) {
+            return new BloomSearcher(indexedColumn, baseCfs, serde, command, target.get());
         }
 
         return null;
@@ -264,71 +329,67 @@ public class BloomingIndex implements Index {
     }
 
     @Override
-    public void validate(PartitionUpdate update) throws InvalidRequestException
-    {
+    public void validate(PartitionUpdate update) throws InvalidRequestException {
         assert !indexedColumn.isPrimaryKeyColumn();
 
-        WrappedIterator.create(update.iterator()).mapWith( r -> r.getCell(indexedColumn).buffer() )
-        .filterDrop( b -> b == null ).forEach( v -> {if (v.remaining() >= FBUtilities.MAX_UNSIGNED_SHORT) {
-            throw new InvalidRequestException(String.format(
-                    "Cannot index value of size %d for index %s on %s(%s) (maximum allowed size=%d)",
-                    v.remaining(),
-                    metadata.name,
-                    baseCfs.metadata,
-                    indexedColumn.name.toString(),
-                    FBUtilities.MAX_UNSIGNED_SHORT));}});
+        WrappedIterator.create(update.iterator()).mapWith(r -> r.getCell(indexedColumn).buffer())
+                .filterDrop(b -> b == null).forEach(v -> {
+                    if (v.remaining() >= FBUtilities.MAX_UNSIGNED_SHORT) {
+                        throw new InvalidRequestException(String.format(
+                                "Cannot index value of size %d for index %s on %s(%s) (maximum allowed size=%d)",
+                                v.remaining(), metadata.name, baseCfs.metadata, indexedColumn.name.toString(),
+                                FBUtilities.MAX_UNSIGNED_SHORT));
+                    }
+                });
 
     }
 
     @Override
-    public Indexer indexerFor(final DecoratedKey key,
-            final RegularAndStaticColumns columns,
-            final int nowInSec,
-            final WriteContext ctx,
-            final IndexTransaction.Type transactionType)
-    {
-        return columns.contains(indexedColumn) ? new BloomingIndexer( key, this, serde, indexedColumn, nowInSec, ctx, transactionType ) : null;
+    public Indexer indexerFor(final DecoratedKey key, final RegularAndStaticColumns columns, final int nowInSec,
+            final WriteContext ctx, final IndexTransaction.Type transactionType) {
+        return columns.contains(indexedColumn)
+                ? new BloomingIndexer(key, baseCfs, serde, indexedColumn, nowInSec, ctx)
+                : null;
     }
 
-    private boolean isBuilt()
-    {
+    /**
+     * Determines if this index is built by asking the base table.
+     * @return true if this index was built.
+     */
+    private boolean isBuilt() {
         return SystemKeyspace.isIndexBuilt(baseCfs.keyspace.getName(), metadata.name);
     }
 
-
-    private Callable<?> getBuildIndexTask()
-    {
+    /**
+     * Constructs the callable task to build the index.
+     * @return The callable task to build the index.
+     */
+    private Callable<?> getBuildIndexTask() {
         return () -> {
             buildBlocking();
             return null;
         };
     }
 
-    @SuppressWarnings("resource")
-    private void buildBlocking()
-    {
+    /**
+     * Build the index using a blocking strategy
+     */
+    private void buildBlocking() {
         baseCfs.forceBlockingFlush();
 
-        try (ColumnFamilyStore.RefViewFragment viewFragment = baseCfs.selectAndReference(View.selectFunction(SSTableSet.CANONICAL));
-                Refs<SSTableReader> sstables = viewFragment.refs)
-        {
-            if (sstables.isEmpty())
-            {
+        try (ColumnFamilyStore.RefViewFragment viewFragment = baseCfs
+                .selectAndReference(View.selectFunction(SSTableSet.CANONICAL));
+                Refs<SSTableReader> sstables = viewFragment.refs) {
+            if (sstables.isEmpty()) {
                 logger.info("No SSTable data for {}.{} to build index {} from, marking empty index as built",
-                        baseCfs.metadata.keyspace,
-                        baseCfs.metadata.name,
-                        metadata.name);
+                        baseCfs.metadata.keyspace, baseCfs.metadata.name, metadata.name);
                 return;
             }
 
-            logger.info("Submitting index build of {} for data in {}",
-                    metadata.name,
-                    getSSTableNames(sstables));
+            logger.info("Submitting index build of {} for data in {}", metadata.name, getSSTableNames(sstables));
 
-            SecondaryIndexBuilder builder = new CollatedViewIndexBuilder(baseCfs,
-                    Collections.singleton(this),
-                    new ReducingKeyIterator(sstables),
-                    ImmutableSet.copyOf(sstables));
+            SecondaryIndexBuilder builder = new CollatedViewIndexBuilder(baseCfs, Collections.singleton(this),
+                    new ReducingKeyIterator(sstables), ImmutableSet.copyOf(sstables));
             Future<?> future = CompactionManager.instance.submitIndexBuild(builder);
             FBUtilities.waitOnFuture(future);
             serde.forceBlockingFlush();
@@ -336,14 +397,13 @@ public class BloomingIndex implements Index {
         logger.info("Index build of {} complete", metadata.name);
     }
 
-    private static String getSSTableNames(Collection<SSTableReader> sstables)
-    {
-        return StreamSupport.stream(sstables.spliterator(), false)
-                .map(SSTableReader::toString)
+    /**
+     * Creates a string comprising the names of the SSTable names.
+     * @param sstables the collections of tables to get the names of.
+     * @return a string comprising the names of the SSTable names.
+     */
+    private static String getSSTableNames(Collection<SSTableReader> sstables) {
+        return StreamSupport.stream(sstables.spliterator(), false).map(SSTableReader::toString)
                 .collect(Collectors.joining(", "));
     }
-
-
 }
-
-

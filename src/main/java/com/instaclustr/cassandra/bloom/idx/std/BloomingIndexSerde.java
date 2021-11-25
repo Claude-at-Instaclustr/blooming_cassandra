@@ -3,8 +3,6 @@ package com.instaclustr.cassandra.bloom.idx.std;
 import java.nio.ByteBuffer;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.Optional;
-
 import org.apache.cassandra.db.CBuilder;
 import org.apache.cassandra.db.Clustering;
 import org.apache.cassandra.db.ClusteringComparator;
@@ -27,7 +25,6 @@ import org.apache.cassandra.db.rows.Row;
 import org.apache.cassandra.db.rows.UnfilteredRowIterator;
 import org.apache.cassandra.dht.LocalPartitioner;
 import org.apache.cassandra.index.transactions.UpdateTransaction;
-import org.apache.cassandra.schema.ColumnMetadata;
 import org.apache.cassandra.schema.IndexMetadata;
 import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.schema.TableMetadataRef;
@@ -36,64 +33,87 @@ import org.slf4j.LoggerFactory;
 
 import com.instaclustr.cassandra.bloom.idx.IndexKey;
 
+/**
+ * Handles all IO to the index table.
+ *
+ */
 public class BloomingIndexSerde {
 
     private static final Logger logger = LoggerFactory.getLogger(BloomingIndexSerde.class);
 
+    /**
+     * The index table.
+     */
     private final ColumnFamilyStore indexCfs;
-
 
     /**
      * Construct the BloomingIndex serializer/deserializer.
      *
-     * <p>Creates the index table</p>
+     * <p>Defines the index table ColumnFamilyStore</p>
      *
      * @param baseCfs
      * @param indexMetadata
      */
-
     public BloomingIndexSerde(ColumnFamilyStore baseCfs, IndexMetadata indexMetadata) {
         TableMetadata baseCfsMetadata = baseCfs.metadata();
-        TableMetadata.Builder builder =
-                TableMetadata.builder(baseCfsMetadata.keyspace, baseCfsMetadata.indexTableName(indexMetadata), baseCfsMetadata.id)
-                .kind(TableMetadata.Kind.INDEX)
-                .partitioner(new LocalPartitioner(LongType.instance))
-                .addPartitionKeyColumn("pos", Int32Type.instance)
-                .addPartitionKeyColumn("code", Int32Type.instance)
+        TableMetadata.Builder builder = TableMetadata
+                .builder(baseCfsMetadata.keyspace, baseCfsMetadata.indexTableName(indexMetadata), baseCfsMetadata.id)
+                .kind(TableMetadata.Kind.INDEX).partitioner(new LocalPartitioner(LongType.instance))
+                .addPartitionKeyColumn("pos", Int32Type.instance).addPartitionKeyColumn("code", Int32Type.instance)
                 .addClusteringColumn("dataKey", BytesType.instance);
 
-        TableMetadataRef tableRef = TableMetadataRef.forOfflineTools(builder.build().updateIndexTableMetadata(baseCfsMetadata.params));
+        TableMetadataRef tableRef = TableMetadataRef
+                .forOfflineTools(builder.build().updateIndexTableMetadata(baseCfsMetadata.params));
 
-
-        indexCfs = ColumnFamilyStore.createColumnFamilyStore(baseCfs.keyspace,
-                tableRef.name,
-                tableRef,
+        indexCfs = ColumnFamilyStore.createColumnFamilyStore(baseCfs.keyspace, tableRef.name, tableRef,
                 baseCfs.getTracker().loadsstables);
     }
 
+    /**
+     * Gets the ClusteringComparator for the index table.
+     * @return the ClusteringComparator for the index table.
+     */
     public ClusteringComparator getIndexComparator() {
         return indexCfs.metadata().comparator;
     }
 
-    public Optional<ColumnFamilyStore> getBackingTable() {
-        return Optional.of(indexCfs);
+    /**
+     * Gets the table for the index.
+     * @return the backing table for the index.
+     */
+    public ColumnFamilyStore getBackingTable() {
+        return indexCfs;
     }
 
-    public long getEstimatedResultRows(int mInt, int kInt, int nInt) {
+    /**
+     * Calculates the estimated number of rows given the shape of the filters coming into
+     * the index.
+     *
+     * @param m The maximum number of bits in the bloom filter.
+     * @param k The number of hashing functions used for each item.
+     * @param n The expected number of items in each bloom filter.
+     * @return <ul>
+     * <li>  -1 : if m, k, or n <= 0.0 and there are items in the index.</li>
+     * <li>   0 : if there are no entries in the index</li>
+     * <li>other: The estimated number of base table rows represented in the index.</li>
+     * </ul>
+     */
+    public long getEstimatedResultRows(double m, double k, double n) {
         int buckets = indexCfs.getMeanRowCount();
         if (buckets == 0) {
             return 0;
         }
+        if (m <= 0.0 || k <= 0.0 || n <= 0.0) {
+            return -1;
+        }
 
-        double m = mInt;
-        double k = kInt;
-        double n = nInt;
         // kn = number of bits requested from hasher
-        double kn = k*n;
+        double kn = k * n;
 
-
-        // the probability of a collision when
-        // selecting from a population i in a range of [1; m] is:
+        // @formatter:off
+        //
+        // the probability of a collision whenselecting from a population of i
+        // in a range of [1; m] is:
         //
         //                        i
         //                / m - 1 \
@@ -112,48 +132,57 @@ public class BloomingIndexSerde {
         //      /                               \   m   /
         //      =====
         //      i = 1
+        //
+        // @formatter:on
 
-        double collisions = kn - m + m*Math.pow( (m-1)/m, kn);
+        double collisions = kn - m + m * Math.pow((m - 1) / m, kn);
         // expected number of bits per entry
-        double bits = kn-collisions;
+        double bits = kn - collisions;
         // number of byte sized buckets is number of bytes in the the container
-        double bucketsPerEntry= Math.min( bits, m/Byte.SIZE);
+        double bucketsPerEntry = Math.min(bits, m / Byte.SIZE);
 
-        return Math.round( buckets / bucketsPerEntry );
+        return Math.round(buckets / bucketsPerEntry);
     }
 
+    /**
+     * Truncates the index at the specified location.
+     * @param truncatedAt the location to truncate the table at.
+     */
     public void truncate(long truncatedAt) {
         indexCfs.discardSSTables(truncatedAt);
     }
 
+    /**
+     * Reloads the index table.
+     */
     public void reload() {
         indexCfs.reload();
     }
 
+    /**
+     * Forces a blocking flush on the index table.
+     */
     public void forceBlockingFlush() {
         indexCfs.forceBlockingFlush();
     }
 
+    /**
+     * Gets the Decorated key for the index table.
+     * @param value the ByteBuffer that contains the undecorated key.
+     * @return the Decorated key for the index table.
+     */
     public DecoratedKey getIndexKeyFor(ByteBuffer value) {
         return indexCfs.decorateKey(value);
     }
 
-    public DecoratedKey getIndexKeyFor(ByteBuffer... value) {
-        int len = 0;
-        for (ByteBuffer bb : value) { len+=bb.remaining(); }
-        ByteBuffer result = ByteBuffer.allocate(len);
-        for (ByteBuffer bb : value) { result.put( bb ); }
-        return getIndexKeyFor( result );
-    }
     /**
-     * Used to construct an the clustering for an entry in the index table based on values from the base data.
-     * The clustering columns in the index table encode the values required to retrieve the correct data from the base
-     * table and varies depending on the kind of the indexed column. See indexCfsMetadata for more details
-     * Used whenever a row in the index table is written or deleted.
-     * @param partitionKey from the base data being indexed
-     * @param prefix from the base data being indexed
-     * @param cell from the base data being indexed
-     * @return a clustering prefix to be used to insert into the index table
+     * Constructs the clustering for an entry in the index table based on values from the base data.
+     * The clustering columns in the index table encode the values required to retrieve the correct data
+     * from the base table and varies depending on the kind of the indexed column.  Used whenever a row
+     * in the index table is written or deleted.
+     * @param rowKey the key from the row in the base table being indexed.
+     * @param clustering the clustering from the row in the base table being indexed.
+     * @return a clustering to be inserted into the index table.
      */
     private <T> Clustering<?> buildIndexClustering(DecoratedKey rowKey, Clustering<T> clustering) {
         CBuilder builder = CBuilder.create(getIndexComparator());
@@ -164,12 +193,16 @@ public class BloomingIndexSerde {
     }
 
     /**
-     * Called when adding a new entry to the index
+     * Inserts a new entry into the index.
+     * @param indexKey The key for the index.
+     * @param rowKey the key for the row being indexed.
+     * @param clustering the clustering for the row being indexed.
+     * @param info the liveness of the primary key columns of the index row
+     * @param ctx the write context to write with.
      */
-
     public void insert(IndexKey indexKey, DecoratedKey rowKey, Clustering<?> clustering, LivenessInfo info,
             WriteContext ctx) {
-        logger.debug( "Inserting {}", indexKey );
+        logger.debug("Inserting {}", indexKey);
         Clustering<?> indexCluster = buildIndexClustering(rowKey, clustering);
 
         DecoratedKey valueKey = getIndexKeyFor(indexKey.asKey());
@@ -180,11 +213,17 @@ public class BloomingIndexSerde {
     }
 
     /**
-     * Called when deleting entries on non-primary key columns
+     * Deletes an entry from the index table.
+     *
+     * @param indexKey The index key to delete.
+     * @param rowKey the key for the row being indexed.
+     * @param clustering the clustering for the row being indexed.
+     * @param deletedAt the time when the row was deleted
+     * @param ctx the write context to write with.
      */
     public void delete(IndexKey indexKey, DecoratedKey rowKey, Clustering<?> clustering, DeletionTime deletedAt,
             WriteContext ctx) {
-        logger.debug( "Deleting {}", indexKey );
+        logger.debug("Deleting {}", indexKey);
         DecoratedKey valueKey = getIndexKeyFor(indexKey.asKey());
         Clustering<?> indexClustering = buildIndexClustering(rowKey, clustering);
         Row row = BTreeRow.emptyDeletedRow(indexClustering, Row.Deletion.regular(deletedAt));
@@ -193,10 +232,19 @@ public class BloomingIndexSerde {
         logger.trace("Removed index entry for value {}", valueKey);
     }
 
+    /**
+     * Creates a partition update on the index table.
+     * @param valueKey the key for the index.
+     * @param row  the row for the index.
+     * @return the Partition update.
+     */
     private PartitionUpdate partitionUpdate(DecoratedKey valueKey, Row row) {
         return PartitionUpdate.singleRowUpdate(indexCfs.metadata(), valueKey, row);
     }
 
+    /**
+     * Invalidates the index so that it will no longer be used.
+     */
     public void invalidate() {
         // interrupt in-progress compactions
         Collection<ColumnFamilyStore> cfss = Collections.singleton(indexCfs);
@@ -208,6 +256,13 @@ public class BloomingIndexSerde {
         indexCfs.invalidate();
     }
 
+    /**
+     * Reads the index table for all entries with the IndexKey.
+     * @param indexKey the key to locate.
+     * @param command the Read comamnd to execute with
+     * @param executionController the execution controller to use.
+     * @return the UnfilteredRowIterator containing all matching entries.
+     */
     public UnfilteredRowIterator read(IndexKey indexKey, ReadCommand command,
             ReadExecutionController executionController) {
         TableMetadata indexMetadata = indexCfs.metadata();

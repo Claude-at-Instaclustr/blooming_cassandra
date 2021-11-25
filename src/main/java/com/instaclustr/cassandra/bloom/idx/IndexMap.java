@@ -1,3 +1,19 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package com.instaclustr.cassandra.bloom.idx;
 
 import java.util.Iterator;
@@ -7,25 +23,20 @@ import org.apache.jena.util.iterator.WrappedIterator;
 import com.instaclustr.cassandra.bloom.idx.std.BFUtils;
 
 /**
- * A Multidimensional Bloom filter entry key.
+ * A Multidimensional Bloom filter entry map.
  */
 public class IndexMap {
     /**
-     * The byte position in the bloom filter for this code
+     * The byte position in the bloom filter for this map
      */
     private int position;
     /**
-     * The code from the position
+     * All of the matching codes for the position.
      */
     private int[] codes;
 
     /**
-     * The number of bytes the data for the key uses.
-     */
-    public static final int BYTES = Integer.BYTES+1;
-
-    /**
-     * Creates an IndexMap from the IndexKey.
+     * Creates an IndexMap from an IndexKey.
      * <p>The map is constructed by
      * retrieving the BFUtils.byteTable entries for {@code key.getCode()}.
      * Resulting map has the same position as the original key.</p>
@@ -37,8 +48,8 @@ public class IndexMap {
 
     /**
      * Constructor.
-     * @param position the byte postion of the code in the bloom filter.
-     * @param code the code from the filter.
+     * @param position the byte position of the code in the bloom filter.
+     * @param codes that match the code from the filter.
      */
     public IndexMap(int position, int[] codes ) {
         this.position=position;
@@ -46,16 +57,16 @@ public class IndexMap {
     }
 
     /**
-     * Gets the position of the code for this key.
-     * @return the position of the code in the bloom filter.
+     * Gets the position of the codes for this map.
+     * @return the position of the codes in the bloom filter.
      */
     public int getPosition() {
         return position;
     }
 
     /**
-     * Gets the code for this key.
-     * @return the code from the bloom filter at the position.
+     * Gets the codes for this key.
+     * @return the codes that match the bloom filter at the position.
      */
     public int[] getCode() {
         return codes;
