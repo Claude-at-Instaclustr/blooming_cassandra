@@ -49,7 +49,7 @@ import com.instaclustr.cassandra.bloom.idx.IndexKey;
 /**
  * Handles searching the index for mathing filters.
  */
-public class BloomSearcher implements Searcher {
+public class BloomingSearcher implements Searcher {
     private static final Logger logger = LoggerFactory.getLogger(CassandraIndexSearcher.class);
 
     /**
@@ -86,7 +86,7 @@ public class BloomSearcher implements Searcher {
      * @param command The read command being executed.
      * @param expression The expression to use for the search.
      */
-    public BloomSearcher(final ColumnMetadata indexedColumn, final ColumnFamilyStore baseCfs  /*BloomingIndex index*/, BloomingIndexSerde serde, ReadCommand command,
+    public BloomingSearcher(final ColumnMetadata indexedColumn, final ColumnFamilyStore baseCfs  /*BloomingIndex index*/, BloomingIndexSerde serde, ReadCommand command,
             RowFilter.Expression expression) {
         this.baseCfs = baseCfs;
         this.indexedColumn = indexedColumn;
