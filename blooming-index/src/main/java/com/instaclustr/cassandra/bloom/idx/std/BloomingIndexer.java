@@ -16,6 +16,7 @@
  */
 package com.instaclustr.cassandra.bloom.idx.std;
 
+import java.lang.reflect.Field;
 import java.util.Iterator;
 import java.util.NavigableSet;
 
@@ -37,6 +38,7 @@ import org.apache.cassandra.index.Index.Indexer;
 import org.apache.cassandra.schema.ColumnMetadata;
 import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.utils.FBUtilities;
+import org.apache.cassandra.utils.concurrent.OpOrder;
 import org.apache.jena.util.iterator.WrappedIterator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -133,18 +135,20 @@ public class BloomingIndexer implements Indexer {
                     key,
                     clustering);
 
-            UnfilteredRowIterator rows = dataCmd.queryMemtableAndDisk(baseCfs, dataCmd.executionController());
-            insertOnly = rows.isEmpty() || ! rows.columns().contains( indexedColumn );
-            if (!insertOnly) {
-                Iterator<Row> rowIter = WrappedIterator.create( rows )
-                        .filterKeep( Unfiltered::isRow  )
-                        .mapWith( u -> {return ((Row) u).filter(columnFilter, tableMetadata);} );
+            try (UnfilteredRowIterator rows = dataCmd.queryMemtableAndDisk(baseCfs, dataCmd.executionController()))
+            {
+                insertOnly = rows.isEmpty() || ! rows.columns().contains( indexedColumn );
+                if (!insertOnly) {
+                    Iterator<Row> rowIter = WrappedIterator.create( rows )
+                            .filterKeep( Unfiltered::isRow  )
+                            .mapWith( u -> {return ((Row) u).filter(columnFilter, tableMetadata);} );
 
-                if (rowIter.hasNext())
-                {
-                    updateRow( rowIter.next(), row );
-                } else {
-                    insertOnly = true;
+                    if (rowIter.hasNext())
+                    {
+                        updateRow( rowIter.next(), row );
+                    } else {
+                        insertOnly = true;
+                    }
                 }
             }
         }
@@ -152,6 +156,7 @@ public class BloomingIndexer implements Indexer {
         if (insertOnly) {
             insertRow(row, null);
         }
+        readOrdering();
     }
 
     /**
@@ -188,6 +193,14 @@ public class BloomingIndexer implements Indexer {
         }
     }
 
+    private byte[] extractBytes(Row row) {
+        Cell<?> cell = row.getCell(indexedColumn);
+        if (cell != null) {
+            return BFUtils.extractCodes(cell.buffer());
+        }
+        return new byte[0];
+    }
+
     @Override
     public void updateRow(Row oldRowData, Row newRowData) {
         logger.trace( "updateRow");
@@ -197,8 +210,22 @@ public class BloomingIndexer implements Indexer {
             }
             return;
         }
-        byte[] oldBytes = BFUtils.extractCodes(oldRowData.getCell(indexedColumn).buffer());
-        byte[] newBytes = BFUtils.extractCodes(newRowData.getCell(indexedColumn).buffer());
+
+        byte[] oldBytes = extractBytes( oldRowData);
+        byte[] newBytes = extractBytes( newRowData );
+
+        if (oldBytes.length == 0)
+        {
+            if (newBytes.length != 0)
+            {
+                insertRow( newRowData, BFUtils.getIndexKeys(newBytes) );
+            }
+            return;
+        } else if (newBytes.length == 0) {
+            removeRow( oldRowData, BFUtils.getIndexKeys(oldBytes) );
+            return;
+        }
+        // do the diff.
         int limit = oldBytes.length > newBytes.length ? oldBytes.length : newBytes.length;
         int min = oldBytes.length > newBytes.length ? newBytes.length : oldBytes.length;
         boolean changed = false;
@@ -226,13 +253,37 @@ public class BloomingIndexer implements Indexer {
         insertRow(newRowData, BFUtils.getIndexKeys(newBytes).filterKeep(key -> {
             return BitMap.contains(changes, key.getPosition());
         }));
+        readOrdering();
+    }
 
+    private void readOrdering( String name, OpOrder.Group group ) {
+
+        try {
+            Field id = OpOrder.Group.class.getDeclaredField("id");
+            id.setAccessible(true);
+
+            Field running = OpOrder.Group.class.getDeclaredField("running");
+            running.setAccessible(true);
+
+            logger.debug( String.format( "name: %s(%s) blocking: %s running: %s Prev: %s", name, id.get(group), group.isBlocking(), running.get(group), group.prev()));
+            if (group.prev() != null) {
+                readOrdering( name, group.prev());
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    public void readOrdering() {
+        readOrdering( "base", baseCfs.readOrdering.getCurrent() );
+        readOrdering( "index", serde.getBackingTable().readOrdering.getCurrent() );
     }
 
     @Override
     public void removeRow(Row row) {
         logger.trace( "removeRow");
         removeRow(row, null);
+        readOrdering();
     }
 
     /**
@@ -272,6 +323,7 @@ public class BloomingIndexer implements Indexer {
     @Override
     public void finish() {
         logger.trace( "finish");
+        readOrdering();
     }
 
 }

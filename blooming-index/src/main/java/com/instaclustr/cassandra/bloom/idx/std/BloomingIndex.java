@@ -27,6 +27,7 @@ import java.util.Optional;
 import java.util.concurrent.Callable;
 import java.util.concurrent.Future;
 import java.util.function.BiFunction;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
 
@@ -45,6 +46,7 @@ import org.apache.cassandra.db.lifecycle.View;
 import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.db.partitions.PartitionIterator;
 import org.apache.cassandra.db.partitions.PartitionUpdate;
+import org.apache.cassandra.db.rows.Cell;
 import org.apache.cassandra.exceptions.InvalidRequestException;
 import org.apache.cassandra.index.Index;
 import org.apache.cassandra.index.IndexRegistry;
@@ -166,6 +168,7 @@ public class BloomingIndex implements Index {
      * @param indexDef the the index definition.
      */
     public BloomingIndex(ColumnFamilyStore baseCfs, IndexMetadata indexDef) {
+        logger.debug( "Constructor" );
         this.baseCfs = baseCfs;
         this.metadata = indexDef;
 
@@ -204,11 +207,14 @@ public class BloomingIndex implements Index {
 
     @Override
     public void register(IndexRegistry registry) {
+        logger.debug( "register" );
         registry.registerIndex(this);
     }
 
     @Override
     public Callable<?> getInitializationTask() {
+        logger.debug( "getInitializationTask" );
+
         // if we're just linking in the index on an already-built index post-restart or
         // if the base
         // table is empty we've nothing to do. Otherwise, submit for building via
@@ -218,16 +224,19 @@ public class BloomingIndex implements Index {
 
     @Override
     public IndexMetadata getIndexMetadata() {
+        logger.debug( "getIndexMetadata" );
         return metadata;
     }
 
     @Override
     public Optional<ColumnFamilyStore> getBackingTable() {
+        logger.debug( "getBackingTable" );
         return Optional.of(serde.getBackingTable());
     }
 
     @Override
     public Callable<Void> getBlockingFlushTask() {
+        logger.debug( "getBlockingFlushTask" );
         return () -> {
             serde.forceBlockingFlush();
             return null;
@@ -236,6 +245,7 @@ public class BloomingIndex implements Index {
 
     @Override
     public Callable<?> getInvalidateTask() {
+        logger.debug( "getInvalidateTask" );
         return () -> {
             serde.invalidate();
             return null;
@@ -244,6 +254,7 @@ public class BloomingIndex implements Index {
 
     @Override
     public Callable<?> getMetadataReloadTask(IndexMetadata indexDef) {
+        logger.debug( "getMetadataReloadTask" );
         return () -> {
             serde.reload();
             return null;
@@ -252,6 +263,7 @@ public class BloomingIndex implements Index {
 
     @Override
     public void validate(ReadCommand command) throws InvalidRequestException {
+        logger.debug( "validate" );
         Optional<RowFilter.Expression> target = getTargetExpression(command.rowFilter().getExpressions());
 
         if (target.isPresent()) {
@@ -263,6 +275,7 @@ public class BloomingIndex implements Index {
 
     @Override
     public Callable<?> getTruncateTask(final long truncatedAt) {
+        logger.debug( "getTruncateTask" );
         return () -> {
             serde.truncate(truncatedAt);
             return null;
@@ -271,6 +284,7 @@ public class BloomingIndex implements Index {
 
     @Override
     public boolean shouldBuildBlocking() {
+        logger.debug( "shouldBuildBlocking" );
         // built-in indexes are always included in builds initiated from
         // SecondaryIndexManager
         return true;
@@ -278,11 +292,13 @@ public class BloomingIndex implements Index {
 
     @Override
     public boolean dependsOn(ColumnMetadata column) {
+        logger.debug( "dependsOn" );
         return indexedColumn.name.equals(column.name);
     }
 
     @Override
     public boolean supportsExpression(ColumnMetadata column, Operator operator) {
+        logger.debug( "supportsExpression" );
         return indexedColumn.name.equals(column.name) && operator == Operator.EQ;
     }
 
@@ -298,11 +314,13 @@ public class BloomingIndex implements Index {
 
     @Override
     public AbstractType<?> customExpressionValueType() {
+        logger.debug( "customExpressionValueType" );
         return null;
     }
 
     @Override
     public long getEstimatedResultRows() {
+        logger.debug( "getEstimatedResultRows" );
         // If any of the parameters are not set and there is data in the index
         // then serde.getEstimatedResultRows() will return -1.
         // in this case we asume the index is used on all the rows in the base table.
@@ -315,11 +333,13 @@ public class BloomingIndex implements Index {
      */
     @Override
     public BiFunction<PartitionIterator, ReadCommand, PartitionIterator> postProcessorFor(ReadCommand command) {
+        logger.debug( "postProcessorFor" );
         return (partitionIterator, readCommand) -> partitionIterator;
     }
 
     @Override
     public RowFilter getPostIndexQueryFilter(RowFilter filter) {
+        logger.debug( "getPostIndexQueryFilter" );
         return getTargetExpression(filter.getExpressions()).map(filter::without).orElse(filter);
     }
 
@@ -334,10 +354,11 @@ public class BloomingIndex implements Index {
 
     @Override
     public Index.Searcher searcherFor(ReadCommand command) {
+        logger.debug( "searcherFor" );
         Optional<RowFilter.Expression> target = getTargetExpression(command.rowFilter().getExpressions());
 
         if (target.isPresent()) {
-            return new BloomSearcher(indexedColumn, baseCfs, serde, command, target.get());
+            return new BloomingSearcher(indexedColumn, baseCfs, serde, command, target.get());
         }
 
         return null;
@@ -346,10 +367,14 @@ public class BloomingIndex implements Index {
 
     @Override
     public void validate(PartitionUpdate update) throws InvalidRequestException {
+        logger.debug( "validate" );
         assert !indexedColumn.isPrimaryKeyColumn();
 
-        WrappedIterator.create(update.iterator()).mapWith(r -> r.getCell(indexedColumn).buffer())
-                .filterDrop(b -> b == null).forEach(v -> {
+        WrappedIterator.create(update.iterator())
+        .mapWith(r -> r.getCell(indexedColumn))
+                .filterDrop( b -> b == null)
+                .mapWith( Cell::buffer )
+                .forEach(v -> {
                     if (v.remaining() >= FBUtilities.MAX_UNSIGNED_SHORT) {
                         throw new InvalidRequestException(String.format(
                                 "Cannot index value of size %d for index %s on %s(%s) (maximum allowed size=%d)",
@@ -363,6 +388,7 @@ public class BloomingIndex implements Index {
     @Override
     public Indexer indexerFor(final DecoratedKey key, final RegularAndStaticColumns columns, final int nowInSec,
             final WriteContext ctx, final IndexTransaction.Type transactionType) {
+        logger.debug( "indexerFor" );
         return columns.contains(indexedColumn)
                 ? new BloomingIndexer(key, baseCfs, serde, indexedColumn, nowInSec, ctx)
                 : null;
