@@ -133,7 +133,7 @@ public class BloomingSearcher implements Searcher {
         BFUtils.getIndexKeys(expression.getIndexValue()).forEach(queryKeys::add);
 
         /*
-         * For each key in the index set, create the associated IndexMap and then
+         * For each key in the queryKeys set, create the associated IndexMap and then
          * process each IndexKey in the IndexMap collecting the base table keys
          * from the index in a set (mapSet).
          *
