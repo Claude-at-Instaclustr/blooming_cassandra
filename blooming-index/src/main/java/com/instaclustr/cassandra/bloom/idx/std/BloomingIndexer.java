@@ -26,6 +26,7 @@ import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.db.DeletionTime;
 import org.apache.cassandra.db.LivenessInfo;
 import org.apache.cassandra.db.RangeTombstone;
+import org.apache.cassandra.db.ReadExecutionController;
 import org.apache.cassandra.db.SinglePartitionReadCommand;
 import org.apache.cassandra.db.WriteContext;
 import org.apache.cassandra.db.filter.ClusteringIndexNamesFilter;
@@ -126,8 +127,6 @@ public class BloomingIndexer implements Indexer {
             TableMetadata tableMetadata = baseCfs.metadata();
             ColumnFilter columnFilter = ColumnFilter.selectionBuilder()
                     .add( indexedColumn ).build();
-            NavigableSet<Clustering<?>> names = FBUtilities.singleton(clustering, tableMetadata.comparator);
-            ClusteringIndexNamesFilter clusteringFilter = new ClusteringIndexNamesFilter(names, false);
 
             SinglePartitionReadCommand dataCmd = SinglePartitionReadCommand.create(
                     tableMetadata,
@@ -135,7 +134,9 @@ public class BloomingIndexer implements Indexer {
                     key,
                     clustering);
 
-            try (UnfilteredRowIterator rows = dataCmd.queryMemtableAndDisk(baseCfs, dataCmd.executionController()))
+
+            try (ReadExecutionController controller = dataCmd.executionController();
+                    UnfilteredRowIterator rows = dataCmd.queryMemtableAndDisk(baseCfs, controller))
             {
                 insertOnly = rows.isEmpty() || ! rows.columns().contains( indexedColumn );
                 if (!insertOnly) {

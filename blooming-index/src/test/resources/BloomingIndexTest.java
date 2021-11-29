@@ -1,3 +1,4 @@
+package org.apache.cassandra.index.internal;
 /*
  *
  * Licensed to the Apache Software Foundation (ASF) under one
@@ -18,8 +19,6 @@
  * under the License.
  *
  */
-package org.apache.cassandra.index.internal;
-
 
 import com.instaclustr.cassandra.bloom.idx.std.BitMap;
 import com.instaclustr.cassandra.bloom.idx.std.BloomingIndex;
@@ -28,8 +27,6 @@ import com.instaclustr.geonames.GeoNameHasher;
 import com.instaclustr.geonames.GeoNameIterator;
 
 import org.junit.Test;
-import org.junit.After;
-
 import org.apache.cassandra.cql3.CQLTester;
 import org.apache.cassandra.cql3.UntypedResultSet;
 import org.apache.commons.collections4.bloomfilter.BloomFilter;
@@ -146,7 +143,6 @@ public class BloomingIndexTest extends CQLTester
         System.out.println( "Done" );
         flush();
 
-/*
         UntypedResultSet results = execute(String.format(query, GeoName.CassandraSerde.hexString(gn[2].filter)));
         assertFalse( results.isEmpty() );
         assertEquals( 1, results.size());
@@ -175,7 +171,6 @@ public class BloomingIndexTest extends CQLTester
         assertEquals( 1, results.size());
         result = GeoName.CassandraSerde.deserialize( results.one() );
         assertEqual( gn[0], result );
-*/
     }
 
     @Test
@@ -213,7 +208,7 @@ public class BloomingIndexTest extends CQLTester
         execute(String.format("UPDATE %%s SET filter = %s WHERE geonameid = $$%s$$",
                 GeoName.CassandraSerde.hexString(newFilter), gn[1].geonameid));
         flush();
-/*
+
         BloomFilter test = new SimpleBloomFilter( GeoNameHasher.shape, GeoNameHasher.hasherFor( gn[1].name+" Changed") );
         UntypedResultSet results = execute(String.format(query, GeoName.CassandraSerde.hexString(test)));
         assertFalse( results.isEmpty() );
@@ -221,7 +216,6 @@ public class BloomingIndexTest extends CQLTester
         GeoName result = GeoName.CassandraSerde.deserialize( results.one() );
         gn[1].filter = newFilter;
         assertEqual( gn[1], result );
-*/
     }
 
 
@@ -249,10 +243,9 @@ public class BloomingIndexTest extends CQLTester
 
         execute(String.format("DELETE FROM %%s WHERE geonameid = $$%s$$", gn[1].geonameid));
         flush();
-/*
+
         UntypedResultSet results =  execute(String.format(query, GeoName.CassandraSerde.hexString(gn[1].filter)));
         assertTrue( results.isEmpty() );
-        */
     }
 
 
