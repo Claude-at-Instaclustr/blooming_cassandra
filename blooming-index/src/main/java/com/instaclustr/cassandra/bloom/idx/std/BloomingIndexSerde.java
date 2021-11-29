@@ -89,7 +89,7 @@ public class BloomingIndexSerde {
      * Gets the ClusteringComparator for the index table.
      * @return the ClusteringComparator for the index table.
      */
-    public ClusteringComparator getIndexComparator() {
+    private ClusteringComparator getIndexComparator() {
         return indexCfs.metadata().comparator;
     }
 
@@ -195,7 +195,7 @@ public class BloomingIndexSerde {
      * @param value the ByteBuffer that contains the undecorated key.
      * @return the Decorated key for the index table.
      */
-    public DecoratedKey getIndexKeyFor(ByteBuffer value) {
+    private DecoratedKey getIndexKeyFor(ByteBuffer value) {
         return indexCfs.decorateKey(value);
     }
 
