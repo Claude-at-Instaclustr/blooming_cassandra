@@ -27,7 +27,6 @@ import java.util.Optional;
 import java.util.concurrent.Callable;
 import java.util.concurrent.Future;
 import java.util.function.BiFunction;
-import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
 
@@ -372,16 +371,16 @@ public class BloomingIndex implements Index {
 
         WrappedIterator.create(update.iterator())
         .mapWith(r -> r.getCell(indexedColumn))
-                .filterDrop( b -> b == null)
-                .mapWith( Cell::buffer )
-                .forEach(v -> {
-                    if (v.remaining() >= FBUtilities.MAX_UNSIGNED_SHORT) {
-                        throw new InvalidRequestException(String.format(
-                                "Cannot index value of size %d for index %s on %s(%s) (maximum allowed size=%d)",
-                                v.remaining(), metadata.name, baseCfs.metadata, indexedColumn.name.toString(),
-                                FBUtilities.MAX_UNSIGNED_SHORT));
-                    }
-                });
+        .filterDrop( b -> b == null)
+        .mapWith( Cell::buffer )
+        .forEach(v -> {
+            if (v.remaining() >= FBUtilities.MAX_UNSIGNED_SHORT) {
+                throw new InvalidRequestException(String.format(
+                        "Cannot index value of size %d for index %s on %s(%s) (maximum allowed size=%d)",
+                        v.remaining(), metadata.name, baseCfs.metadata, indexedColumn.name.toString(),
+                        FBUtilities.MAX_UNSIGNED_SHORT));
+            }
+        });
 
     }
 
@@ -391,7 +390,7 @@ public class BloomingIndex implements Index {
         logger.debug( "indexerFor" );
         return columns.contains(indexedColumn)
                 ? new BloomingIndexer(key, baseCfs, serde, indexedColumn, nowInSec, ctx)
-                : null;
+                        : null;
     }
 
     /**
