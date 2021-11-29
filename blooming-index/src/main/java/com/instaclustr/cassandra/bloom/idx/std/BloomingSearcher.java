@@ -76,7 +76,7 @@ public class BloomingSearcher implements Searcher {
     /**
      * A function to convert a row from the base table into the a key for the row.
      */
-    private Function<Row, DecoratedKey> row2Key;
+    private final Function<Row, DecoratedKey> row2Key;
 
     /**
      * Constructor.
@@ -86,8 +86,8 @@ public class BloomingSearcher implements Searcher {
      * @param command The read command being executed.
      * @param expression The expression to use for the search.
      */
-    public BloomingSearcher(final ColumnMetadata indexedColumn, final ColumnFamilyStore baseCfs  /*BloomingIndex index*/, BloomingIndexSerde serde, ReadCommand command,
-            RowFilter.Expression expression) {
+    public BloomingSearcher(final ColumnMetadata indexedColumn, final ColumnFamilyStore baseCfs, final BloomingIndexSerde serde, final ReadCommand command,
+            final RowFilter.Expression expression) {
         this.baseCfs = baseCfs;
         this.indexedColumn = indexedColumn;
         this.serde = serde;
