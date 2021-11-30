@@ -14,7 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.instaclustr.cassandra.bloom.idx;
+package com.instaclustr.cassandra.bloom.table;
 
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -42,18 +42,38 @@ import com.datastax.driver.core.ResultSet;
 import com.datastax.driver.core.Session;
 import com.instaclustr.cassandra.BulkExecutor;
 
+/**
+ * A table that stores the multidimensional Bloom filter data.
+ *
+ */
 public class IdxTable {
 
+    /**
+     * The keysspace this table is in
+     */
     private final String keyspace;
+    /**
+     * The name of this table.
+     */
     private final String tblName;
+    /**
+     * The session this table is using.
+     */
     private Session session;
 
     /**
-     * A list of bytes to matching bytes in the bloom filter.
+     * A mapping of bytes to CQL `IN` clauses.
      */
     private static final String[] byteTable;
+
+    /**
+     * A mapping of byte value to selectivity.
+     */
     private static final int[] selectivityTable;
 
+    /**
+     * Buil the byteTable and selectivity table
+     */
     static {
         // populate the byteTable
         int limit = (1 << Byte.SIZE);
@@ -75,6 +95,12 @@ public class IdxTable {
 
     }
 
+    /**
+     * Constructor.
+     * @param session The session to use.
+     * @param keyspace The keyspace for this table.
+     * @param tblName The name of this table.
+     */
     public IdxTable(Session session, String keyspace, String tblName) {
         this.keyspace = keyspace;
         this.tblName = tblName;
@@ -82,11 +108,20 @@ public class IdxTable {
 
     }
 
+    /**
+     * Creates the table in the keyspace.
+     */
     public void create() {
         String fmt = "CREATE TABLE %s.%s ( position int, code int, tokn text, PRIMARY KEY((position), code, tokn));";
         session.execute(String.format(fmt, keyspace, tblName));
     }
 
+    /**
+     * Inserts a BitMapProducer into the table.
+     * <p>Generally the token is the primary key of the base table</p>
+     * @param producer The producer that generates the BitMap.
+     * @param token the token to associate the resulting Bloom filter to.
+     */
     public void insert(BitMapProducer producer, String token) {
 
         String fmt = "INSERT INTO %s.%s ( position, code, tokn ) VALUES ( %d, %d, '%s' )";
@@ -111,17 +146,42 @@ public class IdxTable {
         executor.awaitFinish();
     }
 
+    /**
+     * A class that contains a Set of tokens as well as a Bloom filter to quickly exclude filters we know
+     * will not be in the set.  Must be thread safe.
+     */
     class GatedTokens {
+        /**
+         * The gating bloom filter.
+         */
         private BloomFilter gate = null;
+        /**
+         * The number of items in the set of tokens.
+         */
         private int gateCount = -1;
+        /**
+         * The set of tokens.
+         */
         private final Set<String> tokens;
+        /**
+         * The number of candidate tokens that were rejected byteh gate.
+         */
         private int skipped;
 
+        /**
+         * Constructor.
+         * <p>Constructs without a gating filter so all candidates are added.
+         */
         GatedTokens() {
             tokens = new HashSet<String>();
             skipped = 0;
         }
 
+        /**
+         * Creates a new GatedTokens object with a gating Bloom filter created from all the
+         * tokens in this GatedToken object.
+         * @return an empty GatedTokens object with a gate Bloom filter.
+         */
         GatedTokens nextSet() {
             GatedTokens result = new GatedTokens();
             if (tokens.size() > 0) {
@@ -130,12 +190,23 @@ public class IdxTable {
             return result;
         }
 
+        /**
+         * Returns {@code true} if the gate has no tokens.
+         * @return {@code true} if the gate has no tokens.
+         */
         public boolean isEmpty() {
             return gateCount > -1 && tokens.size() == 0;
         }
 
-        public void add(String s) {
-            Hasher hasher = new SimpleHasher(s.getBytes(StandardCharsets.UTF_8));
+        /**
+         * Add a token to the collection.  Will only add the token if
+         * <ul>
+         * <li>The token is in the gating Bloom filter; or</li>
+         * <li>The gating Bloom filter is {@code null}</li>
+         * @param token the token to add.
+         */
+        public void add(String token) {
+            Hasher hasher = new SimpleHasher(token.getBytes(StandardCharsets.UTF_8));
             /*
              * if we have a gate we only want to add things that the gate says might be in
              * the set. This will reduce the overhead by removing strings that we know are
@@ -144,16 +215,31 @@ public class IdxTable {
              */
             boolean doAdd = gate == null ? true : gate.contains(hasher);
             if (doAdd) {
-                tokens.add(s);
+                tokens.add(token);
             } else {
                 skipped++;
             }
         }
 
+        /**
+         * Gets the set of tokens collected by this GatedTokens objec.t
+         * @return the set of tokens.
+         */
         public Set<String> getTokens() {
             return tokens;
         }
 
+        /**
+         * Rebuilds the gate based on all the tokens in the collection.
+         * This method is used when:
+         * <ul>
+         * <li>The gating Bloom filter is requested and no gating bloom filter exits</li>
+         * <li>A merge of another GatedTokens object occurs and the number of items in the resulting
+         * merge is approx. an order of magnitude smaller.</li>
+         * </ul>
+         * <p>This can be an expensive operation for a large collection of tokens</p>
+         * @param shape The shape of the resulting Bloom filter.
+         */
         private void rebuildGate(Shape shape) {
             BloomFilter newfilter = new SimpleBloomFilter(shape);
 
@@ -164,6 +250,10 @@ public class IdxTable {
             gateCount = tokens.size();
         }
 
+        /**
+         * Gets the gating Bloom filter.
+         * @return the gating Bloom filter for this collection of tokens.
+         */
         public synchronized BloomFilter getFilter() {
             if (gate == null) {
                 rebuildGate((tokens.isEmpty()) ? Shape.Factory.fromNP(1, 0.3934)
@@ -172,6 +262,13 @@ public class IdxTable {
             return gate;
         }
 
+        /**
+         * Merge a GatedTokens into this GatedTokens.
+         * <p>A merge is intersection of the set of tokens in the two GatedTokens.</p>
+         * <p>May rebuild the gating Bloom filter.</p>
+         * @param otherTokens The other tokens to merge.
+         * @throws NoMatchException If the result is an empty set of tokens.
+         */
         public synchronized void merge(GatedTokens otherTokens) throws NoMatchException {
             int otherCnt = otherTokens.getTokens().size();
             int otherTot = otherCnt + otherTokens.skipped;
@@ -191,11 +288,25 @@ public class IdxTable {
 
     }
 
+    /**
+     * Captures the tokens from the index table query into a GatedTokens object.
+     *
+     */
     class TokenCapture implements Consumer<ResultSet> {
+        /**
+         * The set of extracted tokens
+         */
         GatedTokens tokens = null;
 
+        /**
+         * The bulk executor making the requests to Cassandra
+         */
         private final BulkExecutor executor;
 
+        /**
+         * Constructor.
+         * @param executor The bulk executor being used.
+         */
         TokenCapture(BulkExecutor executor) {
             this.executor = executor;
         }
@@ -207,6 +318,12 @@ public class IdxTable {
             setTokens(results);
         }
 
+        /**
+         * Merges the results into the current set.
+         * <p>If there are not yet any tokens set the tokens rather than merges.</p>
+         * <p><em>If the result is an empty set, this method kills the executor to stop the process</em></p>
+         * @param results the gatedTokens to merge.
+         */
         private synchronized void setTokens(GatedTokens results) {
             if (tokens == null) {
                 tokens = results;
@@ -220,6 +337,11 @@ public class IdxTable {
         }
     }
 
+    /**
+     * Searches the index.
+     * @param producer The BitMapProducer to search with.
+     * @return The matching set of tokens.
+     */
     public Set<String> search(BitMapProducer producer) {
         BulkExecutor executor = new BulkExecutor(session);
         String fmt = "SELECT tokn FROM %s.%s WHERE position=%d AND code in (%s)";
@@ -255,7 +377,7 @@ public class IdxTable {
                     entry.getValue().forEach(pair -> {
                         try {
                             if (pair.getRight() != 0) {
-                                System.out.println(String.format("Processing %02X at %d [%s]", pair.getRight(),
+                                System.out.println(String.format("Processing 0x%02X at %d [%s]", pair.getRight(),
                                         pair.getLeft(), byteTable[pair.getRight()]));
                                 executor.execute(String.format(fmt, keyspace, tblName, pair.getLeft(),
                                         byteTable[pair.getRight()]), capture);

@@ -1,6 +1,8 @@
 package com.instaclustr.cassandra.bloom.idx;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
 import java.util.Iterator;
 import java.util.TreeSet;
@@ -28,6 +30,14 @@ public class IndexKeyTest {
         assertEquals( k2ff, iter.next() );
         assertEquals( k305, iter.next() );
         assertEquals( k200, iter.next() );
+
+    }
+
+    @Test
+    public void isZeroTest() {
+        assertFalse( new IndexKey( 3, 0x05 ).isZero() );
+        assertFalse( new IndexKey( 0, 0x05 ).isZero() );
+        assertTrue( new IndexKey( 3, 0 ).isZero() );
 
     }
 
