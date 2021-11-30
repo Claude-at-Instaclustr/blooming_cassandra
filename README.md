@@ -87,4 +87,4 @@ An optimisation strategy is utilized where each byte is given a selectivity valu
 
 Crainiceanu, Adina and Lemire, Daniel, "[Bloofi: Multidimensional Bloom filters](https://arxiv.org/abs/1501.01941)", Information Systems, v54, pp 311-325, Dec 2015.
 
-Bloom, Burton H., "[Space/Time Trade-offs in Hash Coding with Allowable Errors](https://www.cs.princeton.edu/courses/archive/spr05/cos598E/bib/p422-bloom.pdf)", Communications of the ACM, v13 N 7), pp 422–426, July 1970.
+Bloom, Burton H., "[Space/Time Trade-offs in Hash Coding with Allowable Errors](https://www.cs.princeton.edu/courses/archive/spr05/cos598E/bib/p422-bloom.pdf)", Communications of the ACM, v13 n7, pp 422–426, July 1970.
