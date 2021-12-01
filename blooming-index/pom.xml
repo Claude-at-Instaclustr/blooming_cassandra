@@ -20,18 +20,19 @@
 	<description>Implementation of a Bloom filter indexing in Cassandra </description>
 	<dependencies>
 
-			<dependency>
-				<groupId>com.instaclustr.cassandra</groupId>
-				<artifactId>blooming-test-helpers</artifactId>
-			</dependency>
+		<dependency>
+			<groupId>com.instaclustr.cassandra</groupId>
+			<artifactId>blooming-test-helpers</artifactId>
+			<scope>test</scope>
+		</dependency>
 
 
 		<dependency>
 			<groupId>org.apache.cassandra</groupId>
 			<artifactId>cassandra-all</artifactId>
 		</dependency>
-		
-		
+
+
 		<dependency>
 			<groupId>com.datastax.cassandra</groupId>
 			<artifactId>cassandra-driver-core</artifactId>
@@ -105,6 +106,11 @@
 					<useSystemClassLoader>true</useSystemClassLoader>
 				</configuration>
 			</plugin>
+
+			<plugin>
+				<groupId>io.fabric8</groupId>
+				<artifactId>docker-maven-plugin</artifactId>
+			</plugin>
 		</plugins>
 	</build>
 	<dependencyManagement>
@@ -113,6 +119,7 @@
 				<groupId>com.instaclustr.cassandra</groupId>
 				<artifactId>blooming</artifactId>
 				<version>0.0.1-SNAPSHOT</version>
+				<type>pom</type>
 			</dependency>
 		</dependencies>
 	</dependencyManagement>
