@@ -16,8 +16,7 @@
 	<groupId>com.instaclustr.cassandra</groupId>
 	<artifactId>blooming-UDF</artifactId>
 	<version>0.0.1-SNAPSHOT</version>
-	<name>Blooming-Cassandra</name>
-	<description>Implementation of a Bloom filter indexing in Cassandra </description>
+	<name>Blooming-Cassandra-UDF</name>
 	<build>
 		<plugins>
 			<plugin>
@@ -92,4 +91,5 @@
 		<relativePath>..</relativePath>
 	</parent>
 	<packaging>pom</packaging>
+	<description>Cassandra User Defined Function (UDF) for Bloom filter checking</description>
 </project>

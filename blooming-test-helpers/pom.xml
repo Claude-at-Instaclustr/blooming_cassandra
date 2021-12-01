@@ -16,8 +16,8 @@
 	<groupId>com.instaclustr.cassandra</groupId>
 	<artifactId>blooming-test-helpers</artifactId>
 	<version>0.0.1-SNAPSHOT</version>
-	<name>Blooming-Cassandra</name>
-	<description>Implementation of a Bloom filter indexing in Cassandra </description>
+	<name>Blooming-Cassandra-Test-Helpers</name>
+	<description>Testing helper classes</description>
 	<dependencies>
 
 		<dependency>

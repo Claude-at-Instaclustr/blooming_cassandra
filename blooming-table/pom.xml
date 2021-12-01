@@ -30,4 +30,5 @@
   		<artifactId>blooming-test-helpers</artifactId>
   	</dependency>
   </dependencies>
+  <name>Blooming-Cassandra-Table</name>
 </project>
