@@ -1,2 +1,2 @@
-FROM library/cassandra:${project.properties.cassandra-version}
-COPY ${outputdirectory}/blooming-index.jar /opt/lib/blooming-index.jar
+FROM library/cassandra:${cassandra-version}
+COPY ${project.basedir}/${project.build.directory}/${project.build.finalName}.jar /opt/cassandra/lib/blooming-index.jar
