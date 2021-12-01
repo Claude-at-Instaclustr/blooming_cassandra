@@ -7,19 +7,19 @@ import com.instaclustr.cassandra.BulkExecutor;
 
 public class GeoNameLoader {
 
-    public static void load(GeoNameIterator iter, Session session) {
-        load(iter, session, null);
+    public static void load(GeoNameIterator iter, Session session, String table) {
+        load(iter, session, table, null);
     }
 
-    public static void load(GeoNameIterator iter, Session session, Consumer<GeoName> consumer) {
+    public static void load(GeoNameIterator iter, Session session, String table, Consumer<GeoName> consumer) {
         BulkExecutor bulkExecutor = new BulkExecutor(session);
         Consumer<GeoName> writer = new Consumer<GeoName>() {
 
             @Override
             public void accept(GeoName gn) {
                 try {
-                    bulkExecutor.execute(GeoName.CassandraSerde.serialize(gn));
-                } catch (InterruptedException e) {
+                    bulkExecutor.execute(String.format( GeoName.CassandraSerde.serialize(gn), table ));
+                } catch (Exception e) {
                     e.printStackTrace();
                 }
             }

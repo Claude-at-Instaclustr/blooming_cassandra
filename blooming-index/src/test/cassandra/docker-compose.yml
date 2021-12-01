@@ -1,0 +1,12 @@
+version: "3.3"
+services:
+  cassandra-one:
+    image: cassandra/blooming-index
+    ports:
+      - "9042:9042"
+    volumes:
+      - ./data:/var/lib/cassandra/data/
+    environment:
+      MAX_HEAP_SIZE: "128M"
+      MIN_HEAP_SIZE: "128M"
+      HEAP_NEWSIZE: "24M"

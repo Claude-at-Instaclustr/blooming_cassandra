@@ -16,8 +16,8 @@
  */
 package com.instaclustr.cassandra.bloom.idx.std;
 
-import java.lang.reflect.Field;
 import java.util.Iterator;
+import java.util.function.Consumer;
 import org.apache.cassandra.db.Clustering;
 import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.DecoratedKey;
@@ -35,11 +35,12 @@ import org.apache.cassandra.db.rows.UnfilteredRowIterator;
 import org.apache.cassandra.index.Index.Indexer;
 import org.apache.cassandra.schema.ColumnMetadata;
 import org.apache.cassandra.schema.TableMetadata;
-import org.apache.cassandra.utils.concurrent.OpOrder;
+import org.apache.jena.util.iterator.ExtendedIterator;
 import org.apache.jena.util.iterator.WrappedIterator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.instaclustr.cassandra.bloom.idx.CountingFilter;
 import com.instaclustr.cassandra.bloom.idx.IndexKey;
 
 /**
@@ -102,12 +103,12 @@ public class BloomingIndexer implements Indexer {
 
     @Override
     public void partitionDelete(DeletionTime deletionTime) {
-        logger.trace("partitionDelete");
+        logger.warn("partitionDelete -- Not Implemented");
     }
 
     @Override
     public void rangeTombstone(RangeTombstone tombstone) {
-        logger.trace("rangeTombstone");
+        logger.warn("rangeTombstone -- Not Implemented");
     }
 
     @Override
@@ -148,7 +149,6 @@ public class BloomingIndexer implements Indexer {
         if (insertOnly) {
             insertRow(row, null);
         }
-        readOrdering();
     }
 
     /**
@@ -158,7 +158,7 @@ public class BloomingIndexer implements Indexer {
      * @param row the Row from the base table that is being inserted.
      * @param keys The list of keys to insert. May be {@code null}.
      */
-    private void insertRow(Row row, Iterator<IndexKey> keys) {
+    private void insertRow(Row row, ExtendedIterator<IndexKey> keys) {
         if (row.isStatic()) {
             return;
         }
@@ -169,22 +169,33 @@ public class BloomingIndexer implements Indexer {
         }
         Clustering<?> clustering = row.clustering();
         LivenessInfo info = LivenessInfo.withExpirationTime(cell.timestamp(), cell.ttl(), cell.localDeletionTime());
-
-        insert(keys == null ? BFUtils.getIndexKeys(cell.buffer()) : keys, clustering, info);
+        Consumer<IndexKey> operation = (r) -> serde.insert(r, key, clustering, info, ctx);
+        update(operation, keys == null ? BFUtils.getIndexKeys(cell.buffer()) : keys, "Inserted" );
     }
 
     /**
-     * Inserts multiple rows into the index table.
+     * Inserts or deletes multiple rows into the index table.
+     * @param operation An IndexKey consumer that calls serde to perform the operation.
      * @param rows The collection of keys to insert.
-     * @param clustering the Clustering in the index table for the rows.
-     * @param info the liveness info for the rows being inserted.
+     * @param op literal "Inserted" or "Deleted" for logging purposes
      */
-    private void insert(Iterator<IndexKey> rows, Clustering<?> clustering, LivenessInfo info) {
-        while (rows.hasNext()) {
-            serde.insert(rows.next(), key, clustering, info, ctx);
+    private void update(Consumer<IndexKey> operation, ExtendedIterator<IndexKey> rows, String op ) {
+        CountingFilter<IndexKey> counting = null;
+        if (logger.isDebugEnabled()) {
+            counting = new CountingFilter<IndexKey>();
+            rows.filterKeep( counting );
+        }
+        rows.forEach( operation );
+        if (logger.isDebugEnabled()) {
+            logger.debug( "{} {} keys", op, counting.getCount());
         }
     }
 
+    /**
+     * Extracts the bytes from a Bloom filter cell.
+     * @param row the Cell to extract the data from (May be null).
+     * @return a byte array (May be empty).
+     */
     private byte[] extractBytes(Row row) {
         Cell<?> cell = row.getCell(indexedColumn);
         if (cell != null) {
@@ -215,7 +226,11 @@ public class BloomingIndexer implements Indexer {
             removeRow(oldRowData, BFUtils.getIndexKeys(oldBytes));
             return;
         }
-        // do the diff.
+        /*
+         * Calculate a diff by comparing the bytes.  If a byte chagnes set a bit in the
+         * "changes" BitMap array.  Later use the changed bits to determine which IndexKeys
+         * to remove or add.
+         */
         int limit = oldBytes.length > newBytes.length ? oldBytes.length : newBytes.length;
         int min = oldBytes.length > newBytes.length ? newBytes.length : oldBytes.length;
         boolean changed = false;
@@ -243,38 +258,12 @@ public class BloomingIndexer implements Indexer {
         insertRow(newRowData, BFUtils.getIndexKeys(newBytes).filterKeep(key -> {
             return BitMap.contains(changes, key.getPosition());
         }));
-        readOrdering();
-    }
-
-    private void readOrdering(String name, OpOrder.Group group) {
-
-        try {
-            Field id = OpOrder.Group.class.getDeclaredField("id");
-            id.setAccessible(true);
-
-            Field running = OpOrder.Group.class.getDeclaredField("running");
-            running.setAccessible(true);
-
-            logger.debug(String.format("name: %s(%s) blocking: %s running: %s Prev: %s", name, id.get(group),
-                    group.isBlocking(), running.get(group), group.prev()));
-            if (group.prev() != null) {
-                readOrdering(name, group.prev());
-            }
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-    }
-
-    public void readOrdering() {
-        readOrdering("base", baseCfs.readOrdering.getCurrent());
-        readOrdering("index", serde.getBackingTable().readOrdering.getCurrent());
     }
 
     @Override
     public void removeRow(Row row) {
         logger.trace("removeRow");
         removeRow(row, null);
-        readOrdering();
     }
 
     /**
@@ -284,7 +273,7 @@ public class BloomingIndexer implements Indexer {
      * @param row the Row from the base table that is being removed.
      * @param keys The list of keys to remove. May be {@code null}.
      */
-    private void removeRow(Row row, Iterator<IndexKey> keys) {
+    private void removeRow(Row row, ExtendedIterator<IndexKey> keys) {
         if (row.isStatic())
             return;
 
@@ -294,27 +283,14 @@ public class BloomingIndexer implements Indexer {
         }
         Clustering<?> clustering = row.clustering();
         DeletionTime deletedAt = new DeletionTime(cell.timestamp(), nowInSec);
+        Consumer<IndexKey> operation = (r) -> serde.delete(r, key, clustering, deletedAt, ctx);
+        update(operation, keys == null ? BFUtils.getIndexKeys(cell.buffer()) : keys, "Deleted" );
 
-        remove(keys == null ? BFUtils.getIndexKeys(cell.buffer()) : keys, clustering, deletedAt);
-
-    }
-
-    /**
-     * Removes multiple rows from the index table.
-     * @param rows The collection of keys to remove.
-     * @param clustering the Clustering in the index table for the rows.
-     * @param deletedAt The time when the deletion occured.
-     */
-    private void remove(Iterator<IndexKey> rows, Clustering<?> clustering, DeletionTime deletedAt) {
-        while (rows.hasNext()) {
-            serde.delete(rows.next(), key, clustering, deletedAt, ctx);
-        }
     }
 
     @Override
     public void finish() {
         logger.trace("finish");
-        readOrdering();
     }
 
 }

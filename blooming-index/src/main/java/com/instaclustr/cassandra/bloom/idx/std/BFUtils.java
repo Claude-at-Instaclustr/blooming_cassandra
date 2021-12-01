@@ -29,8 +29,15 @@ import org.apache.jena.util.iterator.WrappedIterator;
 
 import com.instaclustr.cassandra.bloom.idx.IndexKey;
 
+/**
+ * Utilities for Bloom filter manipulation.
+ *
+ */
 public class BFUtils {
 
+    /**
+     * Do not instantiate.
+     */
     private BFUtils() {
     }
 
@@ -38,10 +45,13 @@ public class BFUtils {
      * A list of bytes to matching bytes in the bloom filter.
      */
     public static final int[][] byteTable;
+    /**
+     * the selectivity for each byte.
+     */
     public static final int[] selectivityTable;
 
     static {
-        // populate the byteTable
+        // populate the byteTable annd selectivity tables.
         int limit = (1 << Byte.SIZE);
         byteTable = new int[limit][];
         selectivityTable = new int[limit];
@@ -63,6 +73,12 @@ public class BFUtils {
 
     }
 
+    /**
+     * Extracts an array of bytes from the Bloom filter ByteBuffer.
+     * <p>Byte order of Bloom filter structure is preserved</p>
+     * @param bloomFilter The byte buffer for the Bloom filter.
+     * @return the extracted codes.
+     */
     public static byte[] extractCodes(ByteBuffer bloomFilter) {
         LongBuffer buff = bloomFilter == null ? LongBuffer.allocate(0) : bloomFilter.asLongBuffer();
         byte[] codes = new byte[buff.remaining() * Long.BYTES];
@@ -78,10 +94,21 @@ public class BFUtils {
         return codes;
     }
 
+    /**
+     * Gets an iterator over the IndexKeys for a Bloom filter ByteBuffer.
+     * <p>Iterator does not contain zero value byte IndexKeys</p>
+     * @param bloomFilter The byte buffer to extract data from.
+     * @return an ExtendedIterator of indexKeys.
+     */
     public static ExtendedIterator<IndexKey> getIndexKeys(ByteBuffer bloomFilter) {
         return getIndexKeys(extractCodes(bloomFilter));
     }
 
+    /**
+     * Get an iterator over the IndexKesy for a byte array
+     * <p>Iterator does not contain zero value byte IndexKeys</p>
+     * @param codes the byte array.
+v     */
     public static ExtendedIterator<IndexKey> getIndexKeys(final byte[] codes) {
         return WrappedIterator.create(new Iterator<IndexKey>() {
             int i = 0;
@@ -112,7 +139,6 @@ public class BFUtils {
      * @return a ByteBuffer containing the value to be inserted in the index. This will be used to make the partition
      * key in the index table
      */
-
     public static ExtendedIterator<ByteBuffer> getIndexedValues(ByteBuffer partitionKey, Clustering<?> clustering,
             Iterator<IndexKey> keys) {
 

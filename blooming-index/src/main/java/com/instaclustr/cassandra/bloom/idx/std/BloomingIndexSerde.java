@@ -98,7 +98,7 @@ public class BloomingIndexSerde {
      * @return the backing table for the index.
      */
     public ColumnFamilyStore getBackingTable() {
-        logger.debug("getBackingTable -- returning {}", indexCfs);
+        logger.trace("getBackingTable -- returning {}", indexCfs);
         return indexCfs;
     }
 
@@ -226,7 +226,7 @@ public class BloomingIndexSerde {
      */
     public void insert(IndexKey indexKey, DecoratedKey rowKey, Clustering<?> clustering, LivenessInfo info,
             WriteContext ctx) {
-        logger.debug("Inserting {}", indexKey);
+        logger.trace("Inserting {}", indexKey);
         Clustering<?> indexCluster = buildIndexClustering(rowKey, clustering);
 
         DecoratedKey valueKey = getIndexKeyFor(indexKey.asKey());
@@ -247,7 +247,7 @@ public class BloomingIndexSerde {
      */
     public void delete(IndexKey indexKey, DecoratedKey rowKey, Clustering<?> clustering, DeletionTime deletedAt,
             WriteContext ctx) {
-        logger.debug("Deleting {}", indexKey);
+        logger.trace("Deleting {}", indexKey);
         DecoratedKey valueKey = getIndexKeyFor(indexKey.asKey());
         Clustering<?> indexClustering = buildIndexClustering(rowKey, clustering);
         Row row = BTreeRow.emptyDeletedRow(indexClustering, Row.Deletion.regular(deletedAt));

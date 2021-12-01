@@ -9,10 +9,12 @@ buildNumber.properties
 .mvn/timing.properties
 # https://github.com/takari/maven-wrapper#usage-without-binary-jar
 .mvn/wrapper/maven-wrapper.jar
-src/test/resources/allCountries.*
-src/test/resources/cassandra/data/
-src/test/resources/cassandra/snapshots/
-
+**/src/test/resources/allCountries.*
+**/src/test/cassandra/data/**
+**/src/test/cassandra/logs/**
+**/src/test/cassandra/**/snapshots
+**/src/test/cassandra/cluster/data?/**
+**/src/test/cassandra/cluster/logs?/**
 .classpath
 .project
 .settings/

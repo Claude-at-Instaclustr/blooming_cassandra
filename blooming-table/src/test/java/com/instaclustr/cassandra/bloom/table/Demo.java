@@ -107,7 +107,7 @@ public class Demo {
      */
     public void load( URL url ) throws IOException {
         GeoNameIterator iter = new GeoNameIterator(url);
-        GeoNameLoader.load(iter, session, gn -> idxTable.insert( gn.filter, gn.geonameid));
+        GeoNameLoader.load(iter, session, "geoNames.geoname",  gn -> idxTable.insert( gn.filter, gn.geonameid));
     }
 
     /**

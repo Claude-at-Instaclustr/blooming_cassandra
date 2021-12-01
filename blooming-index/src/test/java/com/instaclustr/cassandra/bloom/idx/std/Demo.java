@@ -38,7 +38,7 @@ import com.instaclustr.geonames.GeoNameLoader;
  * Demo of the IdxTable .
  *
  */
-public class Demo {
+public class Demo implements AutoCloseable {
 
     /**
      * The cluster we are using.
@@ -49,19 +49,20 @@ public class Demo {
      */
     private Session session;
 
+    private static final String tableName = "geoNames.geoname";
     /**
      * Create keyspace command.
      */
-    private static final String keyspace = "CREATE KEYSPACE IF NOT EXISTS geoNames WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 1 };";
+    private static final String keyspace = "CREATE KEYSPACE IF NOT EXISTS geoNames WITH REPLICATION = { 'class' : 'SimpleStrategy', 'replication_factor' : 2 };";
     /**
      * Create table command.
      */
-    private static final String table = "CREATE TABLE geoNames.geoname (geonameid text, name text, asciiname text, alternatenames text, latitude text, longitude text, feature_class text,feature_code text,country_code text,cc2 text,admin1_code text,admin2_code text, admin3_code text, admin4_code text, population text, elevation text, dem text, timezone text, modification_date text,filter blob,PRIMARY KEY (geonameid ));";
+    private static final String table = "CREATE TABLE IF NOT EXISTS %s (geonameid text, name text, asciiname text, alternatenames text, latitude text, longitude text, feature_class text,feature_code text,country_code text,cc2 text,admin1_code text,admin2_code text, admin3_code text, admin4_code text, population text, elevation text, dem text, timezone text, modification_date text,filter blob,PRIMARY KEY (geonameid ));";
 
-    private static final String index = "CREATE CUSTOM INDEX ON geoNames.geoname(filter) USING 'com.instaclustr.cassandra.bloom.idx.std.BloomingIndex'"
+    private static final String index = "CREATE CUSTOM INDEX IF NOT EXISTS ON %s(filter) USING 'com.instaclustr.cassandra.bloom.idx.std.BloomingIndex'"
             + " WITH OPTIONS = {'numberOfBits':'302', 'numberofItems':'10', 'numberOfFunctions':'21' }";
 
-    private static final String query = "SELECT * FROM %%s WHERE filter = %s";
+    private static final String query = "SELECT * FROM %s WHERE filter = %s";
 
     /**
      * Constructor.
@@ -75,6 +76,7 @@ public class Demo {
     /**
      * Close the demo.  Specifically the session and the cluster.
      */
+    @Override
     public void close() {
         session.close();
         cluster.close();
@@ -85,7 +87,8 @@ public class Demo {
      */
     public void initTable() {
         session.execute(keyspace);
-        session.execute(table);
+        session.execute(String.format( table, tableName ));
+        session.execute(String.format( index, tableName ));
     }
 
     /**
@@ -96,7 +99,7 @@ public class Demo {
      */
     public void load(URL url) throws IOException {
         try (GeoNameIterator iter = new GeoNameIterator(url)) {
-            GeoNameLoader.load(iter, session);
+            GeoNameLoader.load(iter, session, tableName);
         }
     }
 
@@ -108,7 +111,7 @@ public class Demo {
      */
     public List<GeoName> search(BloomFilter filter) throws InterruptedException {
         List<GeoName> result = new ArrayList<GeoName>();
-        String statement = String.format(query, GeoName.CassandraSerde.hexString(filter));
+        String statement = String.format(query, tableName, GeoName.CassandraSerde.hexString(filter));
         ResultSet resultSet = session.execute(statement);
         resultSet.forEach((row) -> result.add(GeoName.CassandraSerde.deserialize(row)));
         return result;
@@ -122,45 +125,48 @@ public class Demo {
      * @throws InterruptedException on thread interuption.
      */
     public static void main(String[] args) throws IOException, InterruptedException {
-        Demo demo = new Demo();
-        System.out.println("args: " + args.length);
-        if (args.length == 1) {
-            demo.initTable();
-            demo.load(GeoNameIterator.DEFAULT_INPUT);
-        }
+        try (Demo demo = new Demo()) {
 
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(System.in))) {
-            System.out.println("Enter criteria (enter to quit)");
-            String s = reader.readLine();
-            HasherCollection hasher = new HasherCollection();
+            System.out.println("args: " + args.length);
+            if (args.length == 1) {
+                demo.initTable();
+                demo.load(GeoNameIterator.DEFAULT_INPUT);
+            }
 
-            while (!s.isEmpty()) {
-                hasher.add(GeoNameHasher.hasherFor(s));
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(System.in))) {
+                System.out.println("Enter criteria (enter to quit)");
+                String s = reader.readLine();
+                HasherCollection hasher = new HasherCollection();
 
-                System.out.println("Enter additional criteria (enter to search)");
-                s = reader.readLine();
                 while (!s.isEmpty()) {
                     hasher.add(GeoNameHasher.hasherFor(s));
+
                     System.out.println("Enter additional criteria (enter to search)");
+                    s = reader.readLine();
+                    while (!s.isEmpty()) {
+                        hasher.add(GeoNameHasher.hasherFor(s));
+                        System.out.println("Enter additional criteria (enter to search)");
+                        s = reader.readLine();
+                    }
+
+                    System.out.println("\nSearch Results:");
+                    BloomFilter filter = new SimpleBloomFilter(GeoNameHasher.shape, hasher);
+                    List<GeoName> results = demo.search(filter);
+                    if (results.isEmpty()) {
+                        System.out.println("No Results found");
+                    } else {
+                        results.iterator().forEachRemaining(gn -> System.out.println(String.format("%s%n%n", gn)));
+                    }
+
+                    hasher = new HasherCollection();
+                    System.out.println("\nEnter criteria (enter to quit)");
                     s = reader.readLine();
                 }
 
-                System.out.println("\nSearch Results:");
-                BloomFilter filter = new SimpleBloomFilter(GeoNameHasher.shape, hasher);
-                List<GeoName> results = demo.search(filter);
-                if (results.isEmpty()) {
-                    System.out.println("No Results found");
-                } else {
-                    results.iterator().forEachRemaining(gn -> System.out.println(String.format("%s%n%n", gn)));
-                }
-
-                hasher = new HasherCollection();
-                System.out.println("\nEnter criteria (enter to quit)");
-                s = reader.readLine();
             }
-
+        } catch (Exception e) {
+            e.printStackTrace();
         }
-        demo.close();
     }
 
 }

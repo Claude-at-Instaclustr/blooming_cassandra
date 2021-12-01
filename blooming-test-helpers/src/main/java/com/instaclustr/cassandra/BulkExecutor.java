@@ -24,16 +24,23 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Semaphore;
 import java.util.function.Consumer;
 import org.apache.commons.collections4.bloomfilter.exceptions.NoMatchException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import com.datastax.driver.core.ResultSet;
 import com.datastax.driver.core.ResultSetFuture;
 import com.datastax.driver.core.Session;
+
+import io.netty.handler.timeout.WriteTimeoutException;
 
 /**
  * Class to perform bulk operations on the Cassandra database.
  *
  */
 public class BulkExecutor {
+
+    private static final Logger logger = LoggerFactory.getLogger(BulkExecutor.class);
+
 
     /*
      * the Cassandra session to use.
@@ -93,28 +100,27 @@ public class BulkExecutor {
         execute(statement, null);
     }
 
-    public void execute(String statement, Consumer<ResultSet> func) throws InterruptedException {
+    public void execute(String statement, Consumer<ResultSet> consumer) throws InterruptedException {
 
         /*
          * runner runs when future is complete. It simply removes the future from the
          * map to show that it is complete.
          */
         Runnable runner = new Runnable() {
+            String stmt = statement;
+            Consumer<ResultSet> func = consumer;
             @Override
             public void run() {
                 ResultSetFuture rsf = map.get(this);
-                ResultSet rs;
                 try {
                     if (rsf != null) {
-                        rs = rsf.get();
+                        ResultSet rs = rsf.get();
                         if (func != null) {
                             func.accept(rs);
                         }
                     }
-                } catch (NoMatchException e) {
-                    System.err.println("No Match Detected");
-                } catch (InterruptedException | ExecutionException e) {
-                    e.printStackTrace();
+                } catch (Exception e) {
+                    logger.error( stmt, e );
                 } finally {
                     map.remove(this);
                     updatePermits.release();
