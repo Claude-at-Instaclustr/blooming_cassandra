@@ -22,19 +22,13 @@ import java.io.InputStreamReader;
 import java.net.URL;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Set;
-import java.util.function.LongConsumer;
-
-import org.apache.commons.collections4.bloomfilter.BitMapProducer;
 import org.apache.commons.collections4.bloomfilter.BloomFilter;
 import org.apache.commons.collections4.bloomfilter.SimpleBloomFilter;
 import org.apache.commons.collections4.bloomfilter.hasher.HasherCollection;
 
 import com.datastax.driver.core.Cluster;
 import com.datastax.driver.core.ResultSet;
-import com.datastax.driver.core.ResultSetFuture;
 import com.datastax.driver.core.Session;
-import com.instaclustr.cassandra.BulkExecutor;
 import com.instaclustr.geonames.GeoName;
 import com.instaclustr.geonames.GeoNameHasher;
 import com.instaclustr.geonames.GeoNameIterator;
@@ -68,12 +62,12 @@ public class Demo {
             + " WITH OPTIONS = {'numberOfBits':'302', 'numberofItems':'10', 'numberOfFunctions':'21' }";
 
     private static final String query = "SELECT * FROM %%s WHERE filter = %s";
+
     /**
      * Constructor.
      */
     public Demo() {
-        Cluster.Builder builder = Cluster.builder()
-                .addContactPoint( "localhost");
+        Cluster.Builder builder = Cluster.builder().addContactPoint("localhost");
         cluster = builder.build();
         session = cluster.connect();
     }
@@ -100,10 +94,9 @@ public class Demo {
      * @param url the ULR to the file.
      * @throws IOException on I/O error.
      */
-    public void load( URL url ) throws IOException {
-        try (GeoNameIterator iter = new GeoNameIterator(url))
-        {
-            GeoNameLoader.load(iter, session );
+    public void load(URL url) throws IOException {
+        try (GeoNameIterator iter = new GeoNameIterator(url)) {
+            GeoNameLoader.load(iter, session);
         }
     }
 
@@ -113,11 +106,11 @@ public class Demo {
      * @return the list of Matching GeoNames.
      * @throws InterruptedException
      */
-    public List<GeoName> search( BloomFilter filter ) throws InterruptedException {
+    public List<GeoName> search(BloomFilter filter) throws InterruptedException {
         List<GeoName> result = new ArrayList<GeoName>();
         String statement = String.format(query, GeoName.CassandraSerde.hexString(filter));
-        ResultSet resultSet =  session.execute(statement);
-        resultSet.forEach( (row) -> result.add( GeoName.CassandraSerde.deserialize( row )));
+        ResultSet resultSet = session.execute(statement);
+        resultSet.forEach((row) -> result.add(GeoName.CassandraSerde.deserialize(row)));
         return result;
     }
 
@@ -130,43 +123,39 @@ public class Demo {
      */
     public static void main(String[] args) throws IOException, InterruptedException {
         Demo demo = new Demo();
-        System.out.println( "args: "+args.length );
-        if (args.length==1)
-        {
+        System.out.println("args: " + args.length);
+        if (args.length == 1) {
             demo.initTable();
-            demo.load( GeoNameIterator.DEFAULT_INPUT);
+            demo.load(GeoNameIterator.DEFAULT_INPUT);
         }
 
-        try (BufferedReader reader =
-                new BufferedReader(new InputStreamReader(System.in)))
-        {
-            System.out.println( "Enter criteria (enter to quit)");
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(System.in))) {
+            System.out.println("Enter criteria (enter to quit)");
             String s = reader.readLine();
             HasherCollection hasher = new HasherCollection();
 
-            while ( ! s.isEmpty() ) {
-                hasher.add( GeoNameHasher.hasherFor( s ));
+            while (!s.isEmpty()) {
+                hasher.add(GeoNameHasher.hasherFor(s));
 
-                System.out.println( "Enter additional criteria (enter to search)");
+                System.out.println("Enter additional criteria (enter to search)");
                 s = reader.readLine();
-                while ( ! s.isEmpty() )
-                {
-                    hasher.add( GeoNameHasher.hasherFor( s ));
-                    System.out.println( "Enter additional criteria (enter to search)");
+                while (!s.isEmpty()) {
+                    hasher.add(GeoNameHasher.hasherFor(s));
+                    System.out.println("Enter additional criteria (enter to search)");
                     s = reader.readLine();
                 }
 
-                System.out.println( "\nSearch Results:");
-                BloomFilter filter = new SimpleBloomFilter( GeoNameHasher.shape, hasher );
-                List<GeoName> results = demo.search( filter );
+                System.out.println("\nSearch Results:");
+                BloomFilter filter = new SimpleBloomFilter(GeoNameHasher.shape, hasher);
+                List<GeoName> results = demo.search(filter);
                 if (results.isEmpty()) {
-                    System.out.println( "No Results found");
+                    System.out.println("No Results found");
                 } else {
-                    results.iterator().forEachRemaining( gn -> System.out.println( String.format( "%s%n%n", gn )));
+                    results.iterator().forEachRemaining(gn -> System.out.println(String.format("%s%n%n", gn)));
                 }
 
                 hasher = new HasherCollection();
-                System.out.println( "\nEnter criteria (enter to quit)");
+                System.out.println("\nEnter criteria (enter to quit)");
                 s = reader.readLine();
             }
 

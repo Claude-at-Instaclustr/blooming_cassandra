@@ -22,13 +22,13 @@ package org.apache.jena.util.iterator;
  * A ClosableIterator that contains only one element
  */
 public class SingletonIterator<T> extends NiceIterator<T> implements ExtendedIterator<T> {
-    
+
     /** The single value to be returned */
     private T item;
 
     /** element delivered */
     private boolean delivered = false;
-        
+
     /**
      * Constructor
      * @param element the single value to be returned
@@ -36,7 +36,7 @@ public class SingletonIterator<T> extends NiceIterator<T> implements ExtendedIte
     public SingletonIterator(T element) {
         this.item = element;
     }
-    
+
     /**
      * Can return a single value
      */
@@ -50,8 +50,8 @@ public class SingletonIterator<T> extends NiceIterator<T> implements ExtendedIte
      */
     @Override
     public T next() {
-        if (delivered) 
-            return noElements( "no objects in this iterator" );
+        if (delivered)
+            return noElements("no objects in this iterator");
         else {
             delivered = true;
             return item;

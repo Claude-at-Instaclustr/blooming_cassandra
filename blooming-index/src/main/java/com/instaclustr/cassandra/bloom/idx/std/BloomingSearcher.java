@@ -86,8 +86,8 @@ public class BloomingSearcher implements Searcher {
      * @param command The read command being executed.
      * @param expression The expression to use for the search.
      */
-    public BloomingSearcher(final ColumnMetadata indexedColumn, final ColumnFamilyStore baseCfs, final BloomingIndexSerde serde, final ReadCommand command,
-            final RowFilter.Expression expression) {
+    public BloomingSearcher(final ColumnMetadata indexedColumn, final ColumnFamilyStore baseCfs,
+            final BloomingIndexSerde serde, final ReadCommand command, final RowFilter.Expression expression) {
         this.baseCfs = baseCfs;
         this.indexedColumn = indexedColumn;
         this.serde = serde;
@@ -100,10 +100,10 @@ public class BloomingSearcher implements Searcher {
             @Override
             public DecoratedKey apply(Row hit) {
                 if (logger.isDebugEnabled()) {
-                    ByteBuffer bb =  hit.clustering().bufferAt(0);
+                    ByteBuffer bb = hit.clustering().bufferAt(0);
                     StringBuilder sb = new StringBuilder("Reading ");
-                    while (bb.hasRemaining() ) {
-                        sb.append( (char) bb.get() );
+                    while (bb.hasRemaining()) {
+                        sb.append((char) bb.get());
                     }
                     logger.debug(sb.toString());
                 }
@@ -128,38 +128,37 @@ public class BloomingSearcher implements Searcher {
             };
         };
 
-        // generate the sorted set of IndexKeys for the Bloom filter specified in the query
+        // generate the sorted set of IndexKeys for the Bloom filter specified in the
+        // query
         Set<IndexKey> queryKeys = new TreeSet<IndexKey>();
         BFUtils.getIndexKeys(expression.getIndexValue()).forEach(queryKeys::add);
 
         /*
          * For each key in the queryKeys set, create the associated IndexMap and then
-         * process each IndexKey in the IndexMap collecting the base table keys
-         * from the index in a set (mapSet).
+         * process each IndexKey in the IndexMap collecting the base table keys from the
+         * index in a set (mapSet).
          *
-         * The result is an iterator over the set of solutions for each IndexKey in queryKeys.
+         * The result is an iterator over the set of solutions for each IndexKey in
+         * queryKeys.
          */
-        ExtendedIterator<Set<DecoratedKey>> maps = WrappedIterator.create(queryKeys.iterator())
-                .mapWith(IndexKey::asMap)
+        ExtendedIterator<Set<DecoratedKey>> maps = WrappedIterator.create(queryKeys.iterator()).mapWith(IndexKey::asMap)
                 .mapWith(idxMap -> {
-                    logger.debug( "Processing {}", idxMap );
+                    logger.debug("Processing {}", idxMap);
                     Set<DecoratedKey> mapSet = new HashSet<DecoratedKey>();
-                    idxMap.getKeys()
-                    .mapWith(idxKey -> {
+                    idxMap.getKeys().mapWith(idxKey -> {
                         return UnfilteredRowIterators.filter(serde.read(idxKey, command, executionController),
                                 command.nowInSec());
-                    })
-                    .forEach(row -> {
+                    }).forEach(row -> {
                         WrappedIterator.create(row).mapWith(row2Key).forEach(mapSet::add);
                     });
-                    logger.debug( "Completed Returning {} entries", mapSet.size());
+                    logger.debug("Completed Returning {} entries", mapSet.size());
                     return mapSet;
                 });
 
         /*
          * Iterate over the solutions retaining the intersection of the result solution
-         * and the current solution.  if the result solution becomes empty there is no solution
-         * to the query and we can return.
+         * and the current solution. if the result solution becomes empty there is no
+         * solution to the query and we can return.
          */
         Set<DecoratedKey> result = null;
         if (!maps.hasNext()) {
@@ -169,13 +168,12 @@ public class BloomingSearcher implements Searcher {
             while (maps.hasNext() && !result.isEmpty()) {
                 Set<DecoratedKey> nxt = maps.next();
                 result.retainAll(nxt);
-                logger.debug( "Merge yielded {} entries", result.size());
+                logger.debug("Merge yielded {} entries", result.size());
             }
         }
 
         // return a PartitionIterator that contains all the results.
-        return createUnfilteredPartitionIterator(
-                WrappedIterator.create(result.iterator()).mapWith(key2RowIter),
+        return createUnfilteredPartitionIterator(WrappedIterator.create(result.iterator()).mapWith(key2RowIter),
                 command.metadata());
 
     }

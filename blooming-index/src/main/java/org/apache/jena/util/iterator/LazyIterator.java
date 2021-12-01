@@ -19,66 +19,66 @@
 package org.apache.jena.util.iterator;
 
 /** An ExtendedIterator that is created lazily.
- * This is useful when constructing an iterator is expensive and 
+ * This is useful when constructing an iterator is expensive and
  * you'd prefer to delay doing it until certain it's actually needed.
  * For example, if you have <code>iterator1.andThen(iterator2)</code>
- * you could implement iterator2 as a LazyIterator.  
- * The sequence to be defined is defined by the subclass's definition 
- * of {@link #create()}.  That is called exactly once on the first attempt 
+ * you could implement iterator2 as a LazyIterator.
+ * The sequence to be defined is defined by the subclass's definition
+ * of {@link #create()}.  That is called exactly once on the first attempt
  * to iterate (i.e. use one of the <code>hasNext</code>, <code>next</code>,
  * <code>remove</code>, <code>removeNext</code> operations,
  *  maybe indirectly via <code>toList</code>).
  */
 abstract public class LazyIterator<T> extends NiceIterator<T> {
 
-	private ExtendedIterator<T> it = null;
+    private ExtendedIterator<T> it = null;
 
-	/** An ExtendedIterator that is created lazily. 
-	 * This constructor has very low overhead - the real work is 
-	 * delayed until the first attempt to use the iterator.
-	 */
-	public LazyIterator() {
-	}
+    /** An ExtendedIterator that is created lazily.
+     * This constructor has very low overhead - the real work is
+     * delayed until the first attempt to use the iterator.
+     */
+    public LazyIterator() {
+    }
 
-	@Override
+    @Override
     public boolean hasNext() {
-		lazy();
-		return it.hasNext();
-	}
+        lazy();
+        return it.hasNext();
+    }
 
-	@Override
+    @Override
     public T next() {
-		lazy();
-		return it.next();
-	}
+        lazy();
+        return it.next();
+    }
 
-	@Override
+    @Override
     public void remove() {
-		lazy();
-		it.remove();
-	}
+        lazy();
+        it.remove();
+    }
 
-	// removeNext() is implemented with next() and remove() so lazy is called.
-        
+    // removeNext() is implemented with next() and remove() so lazy is called.
+
     @Override
     public void close() {
-        if ( it != null )
-            it.close() ;
-    }    
-    
-	private void lazy() {
-		if (it == null)
-			it = create();
-	}
+        if (it != null)
+            it.close();
+    }
 
-	/** The subclass must define this to return
-	 * the ExtendedIterator to invoke. This method will be
-	 * called at most once, on the first attempt to
-	 * use the iterator.
-	 * From then on, all calls to this will be passed
-	 * through to the returned Iterator.
-	 * @return The parent iterator defining the sequence.
-	 */
-	public abstract ExtendedIterator<T> create();
+    private void lazy() {
+        if (it == null)
+            it = create();
+    }
+
+    /** The subclass must define this to return
+     * the ExtendedIterator to invoke. This method will be
+     * called at most once, on the first attempt to
+     * use the iterator.
+     * From then on, all calls to this will be passed
+     * through to the returned Iterator.
+     * @return The parent iterator defining the sequence.
+     */
+    public abstract ExtendedIterator<T> create();
 
 }

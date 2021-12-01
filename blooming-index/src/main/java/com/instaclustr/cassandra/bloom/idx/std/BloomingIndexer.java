@@ -84,8 +84,8 @@ public class BloomingIndexer implements Indexer {
      * @param nowInSec The time this operation was started.
      * @param ctx The context use for writing.
      */
-    public BloomingIndexer(final DecoratedKey key, final ColumnFamilyStore baseCfs, final BloomingIndexSerde serde, final ColumnMetadata indexedColumn,
-            final int nowInSec, final WriteContext ctx) {
+    public BloomingIndexer(final DecoratedKey key, final ColumnFamilyStore baseCfs, final BloomingIndexSerde serde,
+            final ColumnMetadata indexedColumn, final int nowInSec, final WriteContext ctx) {
         this.key = key;
         this.baseCfs = baseCfs;
         this.serde = serde;
@@ -97,52 +97,47 @@ public class BloomingIndexer implements Indexer {
 
     @Override
     public void begin() {
-        logger.trace( "begin");
+        logger.trace("begin");
     }
 
     @Override
     public void partitionDelete(DeletionTime deletionTime) {
-        logger.trace( "partitionDelete");
+        logger.trace("partitionDelete");
     }
 
     @Override
     public void rangeTombstone(RangeTombstone tombstone) {
-        logger.trace( "rangeTombstone");
+        logger.trace("rangeTombstone");
     }
 
     @Override
     public void insertRow(Row row) {
-        logger.trace( "insertRow");
-        /* single updates to the key only produce insert statements -- no deletes
-         * we have to verify if there is already a record and read the existing bloom filter if so
+        logger.trace("insertRow");
+        /*
+         * single updates to the key only produce insert statements -- no deletes we
+         * have to verify if there is already a record and read the existing bloom
+         * filter if so
          */
 
         Clustering<?> clustering = row.clustering();
         boolean insertOnly = baseCfs.isEmpty();
-        if (! insertOnly ) {
+        if (!insertOnly) {
             TableMetadata tableMetadata = baseCfs.metadata();
-            ColumnFilter columnFilter = ColumnFilter.selectionBuilder()
-                    .add( indexedColumn ).build();
+            ColumnFilter columnFilter = ColumnFilter.selectionBuilder().add(indexedColumn).build();
 
-            SinglePartitionReadCommand dataCmd = SinglePartitionReadCommand.create(
-                    tableMetadata,
-                    nowInSec,
-                    key,
+            SinglePartitionReadCommand dataCmd = SinglePartitionReadCommand.create(tableMetadata, nowInSec, key,
                     clustering);
 
-
             try (ReadExecutionController controller = dataCmd.executionController();
-                    UnfilteredRowIterator rows = dataCmd.queryMemtableAndDisk(baseCfs, controller))
-            {
-                insertOnly = rows.isEmpty() || ! rows.columns().contains( indexedColumn );
+                    UnfilteredRowIterator rows = dataCmd.queryMemtableAndDisk(baseCfs, controller)) {
+                insertOnly = rows.isEmpty() || !rows.columns().contains(indexedColumn);
                 if (!insertOnly) {
-                    Iterator<Row> rowIter = WrappedIterator.create( rows )
-                            .filterKeep( Unfiltered::isRow  )
-                            .mapWith( u -> {return ((Row) u).filter(columnFilter, tableMetadata);} );
+                    Iterator<Row> rowIter = WrappedIterator.create(rows).filterKeep(Unfiltered::isRow).mapWith(u -> {
+                        return ((Row) u).filter(columnFilter, tableMetadata);
+                    });
 
-                    if (rowIter.hasNext())
-                    {
-                        updateRow( rowIter.next(), row );
+                    if (rowIter.hasNext()) {
+                        updateRow(rowIter.next(), row);
                     } else {
                         insertOnly = true;
                     }
@@ -200,7 +195,7 @@ public class BloomingIndexer implements Indexer {
 
     @Override
     public void updateRow(Row oldRowData, Row newRowData) {
-        logger.trace( "updateRow");
+        logger.trace("updateRow");
         if (newRowData.isStatic()) {
             if (!oldRowData.isStatic()) {
                 removeRow(oldRowData);
@@ -208,18 +203,16 @@ public class BloomingIndexer implements Indexer {
             return;
         }
 
-        byte[] oldBytes = extractBytes( oldRowData);
-        byte[] newBytes = extractBytes( newRowData );
+        byte[] oldBytes = extractBytes(oldRowData);
+        byte[] newBytes = extractBytes(newRowData);
 
-        if (oldBytes.length == 0)
-        {
-            if (newBytes.length != 0)
-            {
-                insertRow( newRowData, BFUtils.getIndexKeys(newBytes) );
+        if (oldBytes.length == 0) {
+            if (newBytes.length != 0) {
+                insertRow(newRowData, BFUtils.getIndexKeys(newBytes));
             }
             return;
         } else if (newBytes.length == 0) {
-            removeRow( oldRowData, BFUtils.getIndexKeys(oldBytes) );
+            removeRow(oldRowData, BFUtils.getIndexKeys(oldBytes));
             return;
         }
         // do the diff.
@@ -253,7 +246,7 @@ public class BloomingIndexer implements Indexer {
         readOrdering();
     }
 
-    private void readOrdering( String name, OpOrder.Group group ) {
+    private void readOrdering(String name, OpOrder.Group group) {
 
         try {
             Field id = OpOrder.Group.class.getDeclaredField("id");
@@ -262,9 +255,10 @@ public class BloomingIndexer implements Indexer {
             Field running = OpOrder.Group.class.getDeclaredField("running");
             running.setAccessible(true);
 
-            logger.debug( String.format( "name: %s(%s) blocking: %s running: %s Prev: %s", name, id.get(group), group.isBlocking(), running.get(group), group.prev()));
+            logger.debug(String.format("name: %s(%s) blocking: %s running: %s Prev: %s", name, id.get(group),
+                    group.isBlocking(), running.get(group), group.prev()));
             if (group.prev() != null) {
-                readOrdering( name, group.prev());
+                readOrdering(name, group.prev());
             }
         } catch (Exception e) {
             e.printStackTrace();
@@ -272,13 +266,13 @@ public class BloomingIndexer implements Indexer {
     }
 
     public void readOrdering() {
-        readOrdering( "base", baseCfs.readOrdering.getCurrent() );
-        readOrdering( "index", serde.getBackingTable().readOrdering.getCurrent() );
+        readOrdering("base", baseCfs.readOrdering.getCurrent());
+        readOrdering("index", serde.getBackingTable().readOrdering.getCurrent());
     }
 
     @Override
     public void removeRow(Row row) {
-        logger.trace( "removeRow");
+        logger.trace("removeRow");
         removeRow(row, null);
         readOrdering();
     }
@@ -319,7 +313,7 @@ public class BloomingIndexer implements Indexer {
 
     @Override
     public void finish() {
-        logger.trace( "finish");
+        logger.trace("finish");
         readOrdering();
     }
 

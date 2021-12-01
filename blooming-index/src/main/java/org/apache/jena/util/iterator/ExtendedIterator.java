@@ -37,8 +37,7 @@ import java.util.function.Predicate;
  *            the type of element over which an instance of ExtendedIterator
  *            iterates
  */
-public interface ExtendedIterator<T> extends ClosableIterator<T>
-{
+public interface ExtendedIterator<T> extends ClosableIterator<T> {
     /**
          Answer the next object, and remove it. Equivalent to next(); remove().
      */
@@ -49,38 +48,40 @@ public interface ExtendedIterator<T> extends ClosableIterator<T>
          then all the elements of the other iterator. Does not copy either iterator;
          they are consumed as the result iterator is consumed.
      */
-    public <X extends T> ExtendedIterator<T> andThen( Iterator<X> other );
+    public <X extends T> ExtendedIterator<T> andThen(Iterator<X> other);
 
     /**
          return a new iterator containing only the elements of _this_ which
          pass the filter _f_. The order of the elements is preserved. Does not
          copy _this_, which is consumed as the result is consumed.
      */
-    public ExtendedIterator<T> filterKeep( Predicate<T> f );
+    public ExtendedIterator<T> filterKeep(Predicate<T> f);
 
     /**
          return a new iterator containing only the elements of _this_ which
          are rejected by the filter _f_. The order of the elements is preserved.
          Does not copy _this_, which is consumed as the result is consumed.
      */
-    public ExtendedIterator<T> filterDrop( Predicate<T> f );
+    public ExtendedIterator<T> filterDrop(Predicate<T> f);
 
     /**
          return a new iterator where each element is the result of applying
          _map1_ to the corresponding element of _this_. _this_ is not
          copied; it is consumed as the result is consumed.
      */
-    public <U> ExtendedIterator<U> mapWith( Function<T, U> map1 );
+    public <U> ExtendedIterator<U> mapWith(Function<T, U> map1);
 
     /**
      * Execute an action on each element of the iterator.
      * This operation ends and closes the {@code ExtendedIterator} even if there is an exception.
      * Shorter name for "{@code Iterator.forEachRemaining}", adding exception handling.
      */
-    public default void forEach( Consumer<T> action) {
+    public default void forEach(Consumer<T> action) {
         try {
             forEachRemaining(action);
-        } finally { close() ; }
+        } finally {
+            close();
+        }
     }
 
     /**
@@ -95,7 +96,6 @@ public interface ExtendedIterator<T> extends ClosableIterator<T>
      */
     public Set<T> toSet();
 
-
     /**
         Answer with an {@link Optional}.
         This operation assumes that the {@code ExtendedIterator} does not return null for {@code next()}.
@@ -107,7 +107,7 @@ public interface ExtendedIterator<T> extends ClosableIterator<T>
         </ul>
      */
     public default Optional<T> nextOptional() {
-        if ( ! hasNext() )
+        if (!hasNext())
             return Optional.empty();
         T obj = next();
         Objects.requireNonNull(obj, "ExtendedIterator.next is null");

@@ -23,22 +23,20 @@ import java.util.Set;
 import java.util.function.Predicate;
 
 /**
- * A Filter that filters out duplicate values.  
+ * A Filter that filters out duplicate values.
  */
 public class UniqueFilter<T> implements Predicate<T> {
 
     /** The set of objects already seen */
     protected Set<T> seen = new HashSet<>();
 
-	@Override
-	public boolean test(T o) {
-		boolean retval = !seen.contains(o);
-		if (retval)
-		{
-			seen.add( o );
-		}
-		return retval;
-	}
-    
-   
+    @Override
+    public boolean test(T o) {
+        boolean retval = !seen.contains(o);
+        if (retval) {
+            seen.add(o);
+        }
+        return retval;
+    }
+
 }

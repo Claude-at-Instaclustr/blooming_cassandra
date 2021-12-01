@@ -38,16 +38,16 @@ public class IndexKey implements Comparable<IndexKey> {
     /**
      * The number of bytes the data for the key uses.
      */
-    public static final int BYTES = Integer.BYTES*2;
+    public static final int BYTES = Integer.BYTES * 2;
 
     /**
      * Constructor.
      * @param position the byte postion of the code in the bloom filter.
      * @param code the code from the filter.
      */
-    public IndexKey(int position, int code ) {
-        this.position=position;
-        this.code= 0xFF & code;
+    public IndexKey(int position, int code) {
+        this.position = position;
+        this.code = 0xFF & code;
     }
 
     /**
@@ -68,12 +68,12 @@ public class IndexKey implements Comparable<IndexKey> {
 
     @Override
     public String toString() {
-        return String.format( "IndexKey[%d, 0x%02x]", position, code);
+        return String.format("IndexKey[%d, 0x%02x]", position, code);
     }
 
     @Override
-    public boolean equals( Object o) {
-        return o instanceof IndexKey? compareTo( (IndexKey) o ) == 0 : false;
+    public boolean equals(Object o) {
+        return o instanceof IndexKey ? compareTo((IndexKey) o) == 0 : false;
     }
 
     @Override
@@ -87,8 +87,8 @@ public class IndexKey implements Comparable<IndexKey> {
      */
     public ByteBuffer asKey() {
         ByteBuffer result = ByteBuffer.allocate(BYTES);
-        result.putInt( getPosition() );
-        result.putInt( getCode() );
+        result.putInt(getPosition());
+        result.putInt(getCode());
         result.flip();
         return result;
     }
@@ -107,12 +107,12 @@ public class IndexKey implements Comparable<IndexKey> {
      * @return {@code true} if the code is zero.
      */
     public boolean isZero() {
-        return getCode()==0;
+        return getCode() == 0;
     }
 
     @Override
     public int compareTo(IndexKey other) {
-        int i = Integer.compare( other.hashCode(), hashCode());
-        return i==0? Integer.compare( this.position, other.position) : i;
+        int i = Integer.compare(other.hashCode(), hashCode());
+        return i == 0 ? Integer.compare(this.position, other.position) : i;
     }
 }

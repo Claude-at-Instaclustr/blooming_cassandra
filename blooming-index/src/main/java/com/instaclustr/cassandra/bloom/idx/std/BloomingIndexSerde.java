@@ -98,7 +98,7 @@ public class BloomingIndexSerde {
      * @return the backing table for the index.
      */
     public ColumnFamilyStore getBackingTable() {
-        logger.debug( "getBackingTable -- returning {}",indexCfs );
+        logger.debug("getBackingTable -- returning {}", indexCfs);
         return indexCfs;
     }
 
@@ -116,15 +116,15 @@ public class BloomingIndexSerde {
      * </ul>
      */
     public long getEstimatedResultRows(double m, double k, double n) {
-        logger.debug( "getEstimatedResultRows( {}, {}, {} )", m, k, n );
+        logger.debug("getEstimatedResultRows( {}, {}, {} )", m, k, n);
         int buckets = indexCfs.getMeanRowCount();
         if (buckets == 0) {
-            logger.debug( "getEstimatedResultRows - No data in index, returning 0" );
+            logger.debug("getEstimatedResultRows - No data in index, returning 0");
             return 0;
         }
-        logger.debug( "getEstimatedResultRows - buckets: {}", buckets );
+        logger.debug("getEstimatedResultRows - buckets: {}", buckets);
         if (m <= 0.0 || k <= 0.0 || n <= 0.0) {
-            logger.debug( "getEstimatedResultRows - parameter less than 0, returning -1" );
+            logger.debug("getEstimatedResultRows - parameter less than 0, returning -1");
             return -1;
         }
 
@@ -161,9 +161,9 @@ public class BloomingIndexSerde {
         double bits = kn - collisions;
         // number of byte sized buckets is number of bytes in the the container
         double bucketsPerEntry = Math.min(bits, m / Byte.SIZE);
-        logger.debug( "getEstimatedResultRows - bucketsPerEntry {}", bucketsPerEntry );
+        logger.debug("getEstimatedResultRows - bucketsPerEntry {}", bucketsPerEntry);
 
-        logger.debug( "getEstimatedResultRows - returning Math.round( {} )", buckets/bucketsPerEntry );
+        logger.debug("getEstimatedResultRows - returning Math.round( {} )", buckets / bucketsPerEntry);
 
         return Math.round(buckets / bucketsPerEntry);
     }

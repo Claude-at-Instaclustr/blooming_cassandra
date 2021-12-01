@@ -42,8 +42,8 @@ public class IndexMap {
      * Resulting map has the same position as the original key.</p>
      * @param key the Key to create the map from.
      */
-    public IndexMap( IndexKey key ) {
-        this( key.getPosition(), BFUtils.byteTable[key.getCode()]);
+    public IndexMap(IndexKey key) {
+        this(key.getPosition(), BFUtils.byteTable[key.getCode()]);
     }
 
     /**
@@ -51,9 +51,9 @@ public class IndexMap {
      * @param position the byte position of the code in the bloom filter.
      * @param codes that match the code from the filter.
      */
-    public IndexMap(int position, int[] codes ) {
-        this.position=position;
-        this.codes=codes;
+    public IndexMap(int position, int[] codes) {
+        this.position = position;
+        this.codes = codes;
     }
 
     /**
@@ -74,9 +74,9 @@ public class IndexMap {
 
     @Override
     public String toString() {
-        StringBuilder sb = new StringBuilder( String.format( "IndexMap[%d, [", position, hashCode() ));
-        for (int i=0;i<codes.length;i++) {
-            sb.append( String.format( "%s 0x%02x",  i>0? ",":"", codes[i]));
+        StringBuilder sb = new StringBuilder(String.format("IndexMap[%d, [", position, hashCode()));
+        for (int i = 0; i < codes.length; i++) {
+            sb.append(String.format("%s 0x%02x", i > 0 ? "," : "", codes[i]));
         }
         return sb.append(" ]]").toString();
     }
@@ -88,15 +88,16 @@ public class IndexMap {
     public ExtendedIterator<IndexKey> getKeys() {
         return WrappedIterator.create(new Iterator<IndexKey>() {
             int idx = 0;
+
             @Override
             public boolean hasNext() {
-                return idx<codes.length;
+                return idx < codes.length;
             }
 
             @Override
             public IndexKey next() {
                 if (hasNext()) {
-                    return new IndexKey( getPosition(), codes[idx++]);
+                    return new IndexKey(getPosition(), codes[idx++]);
                 }
                 throw new NoSuchElementException();
             }

@@ -36,13 +36,12 @@ import org.apache.jena.atlas.lib.Closeable;
     Implementors are encouraged to dispose of resources as soon as is convenient.
  */
 
-public interface ClosableIterator<T> extends Iterator<T>, Closeable
-    {
+public interface ClosableIterator<T> extends Iterator<T>, Closeable {
     /**
         Close the iterator. Other operations on this iterator may now throw an exception.
         A ClosableIterator may be closed as many times as desired - the subsequent
         calls do nothing.
-    */
+     */
     @Override
     public void close();
-    }
+}
