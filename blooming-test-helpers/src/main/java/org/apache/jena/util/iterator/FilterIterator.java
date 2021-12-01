@@ -22,67 +22,65 @@ import java.util.Iterator;
 import java.util.NoSuchElementException;
 import java.util.function.Predicate;
 
-/** 
+/**
      Creates a sub-Iterator by filtering. This class should not be used
      directly any more; the subclasses FilterKeepIterator and FilterDropIterator
      should be used instead.
  */
-public class FilterIterator<T> extends WrappedIterator<T>
-    {
-	protected final Predicate<T> f;
-	protected T current;
+public class FilterIterator<T> extends WrappedIterator<T> {
+    protected final Predicate<T> f;
+    protected T current;
     protected boolean canRemove;
     protected boolean hasCurrent;
 
-    /** 
+    /**
         Initialises a FilterIterator with its filter and base.
         @param fl An object is included if it is accepted by this Filter.
         @param e The base Iterator.
-    */        
-	public FilterIterator( Predicate<T> fl, Iterator<T> e ) 
-        {
-		super( e );
-		f = fl;
-        }
+     */
+    public FilterIterator(Predicate<T> fl, Iterator<T> e) {
+        super(e);
+        f = fl;
+    }
 
-    /** 
+    /**
         Answer true iff there is at least one more acceptable object.
         [Stores reference into <code>current</code>, sets <code>canRemove</code>
         false; answer preserved in `hasCurrent`]
-    */        
-	@Override public boolean hasNext() 
-        {
-	    while (!hasCurrent && super.hasNext())
-            hasCurrent = f.test( current = super.next() );
+     */
+    @Override
+    public boolean hasNext() {
+        while (!hasCurrent && super.hasNext())
+            hasCurrent = f.test(current = super.next());
         canRemove = false;
         return hasCurrent;
-        }
+    }
 
-    /** 
+    /**
          Remove the current member from the underlying iterator. Legal only
          after a .next() but before any subsequent .hasNext(), because that
          may advance the underlying iterator.
-    */        
-    @Override public void remove() 
-        {
-        if (!canRemove ) throw new IllegalStateException
-            ( "FilterIterators do not permit calls to hasNext between calls to next and remove." );
+     */
+    @Override
+    public void remove() {
+        if (!canRemove)
+            throw new IllegalStateException(
+                    "FilterIterators do not permit calls to hasNext between calls to next and remove.");
         super.remove();
-        }
-        
-    /** 
+    }
+
+    /**
         Answer the next acceptable object from the base iterator. The redundant
         test of `hasCurrent` appears to make a detectable speed difference.
         Crazy.
-    */        
-	@Override public T next() 
-        {
-		if (hasCurrent || hasNext()) 
-            {
+     */
+    @Override
+    public T next() {
+        if (hasCurrent || hasNext()) {
             canRemove = true;
             hasCurrent = false;
             return current;
-            }
-		throw new NoSuchElementException();
         }
+        throw new NoSuchElementException();
     }
+}

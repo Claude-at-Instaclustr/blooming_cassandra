@@ -48,8 +48,7 @@ public class GeoNameIterator implements Iterator<GeoName>, AutoCloseable {
             } catch (IOException e) {
                 return false;
             }
-            if (s == null)
-            {
+            if (s == null) {
                 return false;
             }
             next = GeoName.Serde.deserialize(s);
@@ -63,7 +62,7 @@ public class GeoNameIterator implements Iterator<GeoName>, AutoCloseable {
             try {
                 count++;
                 if ((count % 1000) == 0) {
-                    System.out.println( String.format( "read : %8d", count));
+                    System.out.println(String.format("read : %8d", count));
                 }
                 return next;
             } finally {

@@ -21,38 +21,37 @@ package org.apache.jena.util.iterator;
 import java.util.*;
 
 /**
-    A MapFilterIterator takes a MapFilter and an [Extended]Iterator and returns a new 
-    ExtendedIterator which delivers the sequence of all non-null elements MapFilter(X) 
+    A MapFilterIterator takes a MapFilter and an [Extended]Iterator and returns a new
+    ExtendedIterator which delivers the sequence of all non-null elements MapFilter(X)
     for X from the base iterator.
-*/
+ */
 
-public class MapFilterIterator<T,X> extends NiceIterator<X> implements ExtendedIterator<X>
-    {
-    MapFilter<T,X> f;
+public class MapFilterIterator<T, X> extends NiceIterator<X> implements ExtendedIterator<X> {
+    MapFilter<T, X> f;
     X current;
     boolean dead;
     ClosableIterator<T> underlying;
-    
-/** Creates a sub-Iterator.
- * @param fl An object is included if it is accepted by this Filter.
- * @param e The parent Iterator.
- */        
-    public MapFilterIterator( MapFilter<T,X> fl, ExtendedIterator<T> e) {
+
+    /** Creates a sub-Iterator.
+     * @param fl An object is included if it is accepted by this Filter.
+     * @param e The parent Iterator.
+     */
+    public MapFilterIterator(MapFilter<T, X> fl, ExtendedIterator<T> e) {
         f = fl;
         current = null;
         dead = false;
         underlying = e;
     }
-    
-/** Are there any more acceptable objects.
- * @return true if there is another acceptable object.
- */        
+
+    /** Are there any more acceptable objects.
+     * @return true if there is another acceptable object.
+     */
     @Override
     synchronized public boolean hasNext() {
-        if (current!=null)
+        if (current != null)
             return true;
-        while (  underlying.hasNext() ) {
-            current = f.accept( underlying.next() );
+        while (underlying.hasNext()) {
+            current = f.accept(underlying.next());
             if (current != null)
                 return true;
         }
@@ -60,28 +59,28 @@ public class MapFilterIterator<T,X> extends NiceIterator<X> implements ExtendedI
         dead = true;
         return false;
     }
-    
-    @Override
-    public void close()
-        {
-        underlying.close();
-        }
-        
-/** remove's the member from the underlying <CODE>Iterator</CODE>; 
-   <CODE>hasNext()</CODE> may not be called between calls to 
-    <CODE>next()</CODE> and <CODE>remove()</CODE>.
- */        
-        @Override
-        synchronized public void remove() {
-            if ( current != null || dead )
-              throw new IllegalStateException(
-              "FilterIterator does not permit calls to hasNext between calls to next and remove.");
 
-            underlying.remove();
-        }
-/** The next acceptable object in the iterator.
- * @return The next acceptable object.
- */        
+    @Override
+    public void close() {
+        underlying.close();
+    }
+
+    /** remove's the member from the underlying <CODE>Iterator</CODE>;
+    <CODE>hasNext()</CODE> may not be called between calls to
+    <CODE>next()</CODE> and <CODE>remove()</CODE>.
+     */
+    @Override
+    synchronized public void remove() {
+        if (current != null || dead)
+            throw new IllegalStateException(
+                    "FilterIterator does not permit calls to hasNext between calls to next and remove.");
+
+        underlying.remove();
+    }
+
+    /** The next acceptable object in the iterator.
+     * @return The next acceptable object.
+     */
     @Override
     synchronized public X next() {
         if (hasNext()) {

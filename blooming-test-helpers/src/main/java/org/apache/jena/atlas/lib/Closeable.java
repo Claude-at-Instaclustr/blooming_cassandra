@@ -23,7 +23,6 @@ package org.apache.jena.atlas.lib;
  * <p>
  * The {@link #close} operation may safely be called multiple times.
  */
-public interface Closeable
-{
-    public void close() ;
+public interface Closeable {
+    public void close();
 }
