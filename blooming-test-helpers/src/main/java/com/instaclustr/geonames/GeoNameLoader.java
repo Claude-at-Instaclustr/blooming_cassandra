@@ -1,5 +1,6 @@
 package com.instaclustr.geonames;
 
+import java.util.Iterator;
 import java.util.function.Consumer;
 
 import com.datastax.driver.core.Session;
@@ -7,12 +8,11 @@ import com.instaclustr.cassandra.BulkExecutor;
 
 public class GeoNameLoader {
 
-    public static void load(GeoNameIterator iter, Session session, String table) {
-        load(iter, session, table, null);
+    public static void load(Iterator<GeoName> iter, BulkExecutor bulkExecutor, String table) {
+        load(iter, bulkExecutor, table, null);
     }
 
-    public static void load(GeoNameIterator iter, Session session, String table, Consumer<GeoName> consumer) {
-        BulkExecutor bulkExecutor = new BulkExecutor(session);
+    public static void load(Iterator<GeoName> iter, BulkExecutor bulkExecutor,  String table, Consumer<GeoName> consumer) {
         Consumer<GeoName> writer = new Consumer<GeoName>() {
 
             @Override

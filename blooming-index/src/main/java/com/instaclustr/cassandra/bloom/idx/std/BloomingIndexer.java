@@ -216,6 +216,24 @@ public class BloomingIndexer implements Indexer {
 
         byte[] oldBytes = extractBytes(oldRowData);
         byte[] newBytes = extractBytes(newRowData);
+        /*
+         * verify oldBytes were actually indexed
+         */
+        try (ExtendedIterator<IndexKey> keyIter = BFUtils.getIndexKeys(oldBytes)) {
+            if (keyIter.hasNext()) {
+                boolean doSingle = false;
+                try (UnfilteredRowIterator rowIter = serde.read( keyIter.next(), nowInSec, key, oldRowData.clustering())) {
+                    doSingle = ! rowIter.hasNext();
+                }
+                if (doSingle) {
+                    insertRow(newRowData, BFUtils.getIndexKeys(newBytes));
+                    return;
+                }
+
+            }
+        }
+
+
 
         if (oldBytes.length == 0) {
             if (newBytes.length != 0) {

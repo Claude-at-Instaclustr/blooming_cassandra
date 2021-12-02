@@ -94,18 +94,18 @@ public class BloomingSearcher implements Searcher {
         this.command = command;
         this.expression = expression;
 
-        // A function to convert a row to the key
+        // A function to convert a serde row to the base key
         this.row2Key = new Function<Row, DecoratedKey>() {
 
             @Override
             public DecoratedKey apply(Row hit) {
-                if (logger.isDebugEnabled()) {
+                if (logger.isTraceEnabled()) {
                     ByteBuffer bb = hit.clustering().bufferAt(0);
                     StringBuilder sb = new StringBuilder("Reading ");
                     while (bb.hasRemaining()) {
                         sb.append((char) bb.get());
                     }
-                    logger.debug(sb.toString());
+                    logger.trace(sb.toString());
                 }
                 return baseCfs.decorateKey(hit.clustering().bufferAt(0));
             }
@@ -146,7 +146,7 @@ public class BloomingSearcher implements Searcher {
                     logger.debug("Processing {}", idxMap);
                     Set<DecoratedKey> mapSet = new HashSet<DecoratedKey>();
                     idxMap.getKeys().mapWith(idxKey -> {
-                        return UnfilteredRowIterators.filter(serde.read(idxKey, command, executionController),
+                        return UnfilteredRowIterators.filter(serde.read(idxKey, command.nowInSec(), executionController),
                                 command.nowInSec());
                     }).forEach(row -> {
                         WrappedIterator.create(row).mapWith(row2Key).forEach(mapSet::add);

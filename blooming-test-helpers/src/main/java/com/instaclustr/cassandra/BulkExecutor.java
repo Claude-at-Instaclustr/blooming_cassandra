@@ -23,15 +23,17 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Semaphore;
 import java.util.function.Consumer;
-import org.apache.commons.collections4.bloomfilter.exceptions.NoMatchException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.datastax.driver.core.ResultSet;
 import com.datastax.driver.core.ResultSetFuture;
 import com.datastax.driver.core.Session;
-
-import io.netty.handler.timeout.WriteTimeoutException;
+import com.datastax.driver.core.exceptions.ConnectionException;
+import com.datastax.driver.core.exceptions.OperationTimedOutException;
+import com.datastax.driver.core.exceptions.QueryConsistencyException;
+import com.datastax.driver.core.exceptions.WriteFailureException;
+import com.datastax.driver.core.exceptions.WriteTimeoutException;
 
 /**
  * Class to perform bulk operations on the Cassandra database.
@@ -45,7 +47,7 @@ public class BulkExecutor {
     /*
      * the Cassandra session to use.
      */
-    private Session session;
+    private final Session session;
 
     private final Semaphore updatePermits;
 
@@ -60,9 +62,9 @@ public class BulkExecutor {
      * The service that executes the runnables.
      */
     // private ExecutorService executor = Executors.newSingleThreadExecutor();
-    private ExecutorService executor = Executors.newCachedThreadPool();
-    // private ExecutorService executor = Executors.newFixedThreadPool(3);
-
+    //private ExecutorService executor = Executors.newCachedThreadPool();
+    //private ExecutorService executor = Executors.newFixedThreadPool(3);
+    private final ExecutorService executor;
     /**
      * Constructor.
      *
@@ -70,8 +72,18 @@ public class BulkExecutor {
      *            The Cassandra session to use.
      */
     public BulkExecutor(Session session) {
+        this( session, Executors.newFixedThreadPool(session.getCluster().getMetrics().getKnownHosts().getValue()) );
+    }
+
+    public BulkExecutor(Session session, ExecutorService executor) {
+        this( session, executor, session.getCluster().getMetrics().getKnownHosts().getValue());
+    }
+
+
+    public BulkExecutor(Session session, ExecutorService executor, int semaphoreCount) {
         this.session = session;
-        updatePermits = new Semaphore(200);
+        this.updatePermits = new Semaphore(semaphoreCount);
+        this.executor = executor;
     }
 
     public void kill() {
@@ -106,31 +118,10 @@ public class BulkExecutor {
          * runner runs when future is complete. It simply removes the future from the
          * map to show that it is complete.
          */
-        Runnable runner = new Runnable() {
-            String stmt = statement;
-            Consumer<ResultSet> func = consumer;
-            @Override
-            public void run() {
-                ResultSetFuture rsf = map.get(this);
-                try {
-                    if (rsf != null) {
-                        ResultSet rs = rsf.get();
-                        if (func != null) {
-                            func.accept(rs);
-                        }
-                    }
-                } catch (Exception e) {
-                    logger.error( stmt, e );
-                } finally {
-                    map.remove(this);
-                    updatePermits.release();
-                }
-            }
-        };
+        Runnable runner = new ExecRunner( statement, consumer );
 
         updatePermits.acquire();
         ResultSetFuture rsf = session.executeAsync(statement);
-
         /*
          * the map keeps a reference to the ResultSetFuture so we can track when all
          * futures have executed
@@ -180,5 +171,51 @@ public class BulkExecutor {
         }
         executor.shutdown();
     }
+
+    class ExecRunner implements Runnable {
+        private final String stmt;
+        private final Consumer<ResultSet> func;
+
+        ExecRunner( String statement, Consumer<ResultSet> consumer) {
+            stmt = statement;
+            func = consumer;
+        }
+
+        private void processResultSet( ResultSet rs) {
+            if (func != null) {
+                func.accept(rs);
+            }
+        }
+        @Override
+        public void run() {
+            ResultSetFuture rsf = map.get(this);
+            try {
+                if (rsf != null) {
+                    processResultSet( rsf.get() );
+                }
+            } catch (Exception e) {
+                if (e.getCause() != null) {
+                    if (e.getCause() instanceof QueryConsistencyException ||
+                            e.getCause() instanceof ConnectionException) {
+                        logger.warn( "Write failure on {}", stmt);
+                        try {
+                            processResultSet( session.execute(stmt) );
+                        } catch (Exception e1) {
+                            logger.error( "Exec runner failure", e );
+                        }
+                    } else {
+                        logger.error( "Exec runner failure", e );
+                    }
+                } else {
+                    logger.error( "Exec runner failure", e );
+                }
+
+            } finally {
+                map.remove(this);
+                updatePermits.release();
+            }
+        }
+
+    };
 
 }

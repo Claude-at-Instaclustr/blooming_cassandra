@@ -283,16 +283,33 @@ public class BloomingIndexSerde {
     /**
      * Reads the index table for all entries with the IndexKey.
      * @param indexKey the key to locate.
-     * @param command the Read comamnd to execute with
+     * @param nowInSec The time of the query.
      * @param executionController the execution controller to use.
      * @return the UnfilteredRowIterator containing all matching entries.
      */
-    public UnfilteredRowIterator read(IndexKey indexKey, ReadCommand command,
+    public UnfilteredRowIterator read(IndexKey indexKey, int nowInSec,
             ReadExecutionController executionController) {
         TableMetadata indexMetadata = indexCfs.metadata();
         DecoratedKey valueKey = getIndexKeyFor(indexKey.asKey());
-        return SinglePartitionReadCommand.fullPartitionRead(indexMetadata, command.nowInSec(), valueKey)
+        return SinglePartitionReadCommand.fullPartitionRead(indexMetadata, nowInSec, valueKey)
                 .queryMemtableAndDisk(indexCfs, executionController.indexReadController());
 
+    }
+
+    /**
+     * Reads the index table for all entries with the IndexKey.
+     * @param indexKey the key to locate.
+     * @param nowInSec The time of the query.
+     * @param executionController the execution controller to use.
+     * @return the UnfilteredRowIterator containing all matching entries.
+     */
+    public UnfilteredRowIterator read(IndexKey indexKey, int nowInSec, DecoratedKey rowKey, Clustering<?> clustering) {
+        TableMetadata indexMetadata = indexCfs.metadata();
+        DecoratedKey valueKey = getIndexKeyFor(indexKey.asKey());
+        SinglePartitionReadCommand readCommand = SinglePartitionReadCommand.create(indexMetadata, nowInSec, valueKey,
+                buildIndexClustering( rowKey, clustering) );
+        try (ReadExecutionController readExecutionController = readCommand.executionController()) {
+            return readCommand.queryMemtableAndDisk(indexCfs, readExecutionController);
+        }
     }
 }
