@@ -23,6 +23,7 @@ import java.net.URL;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.Executors;
 import java.util.function.LongConsumer;
 
 import org.apache.commons.collections4.bloomfilter.BitMapProducer;
@@ -106,8 +107,9 @@ public class Demo {
      * @throws IOException on I/O error.
      */
     public void load( URL url ) throws IOException {
+        BulkExecutor bulkExecutor = new BulkExecutor( session, Executors.newCachedThreadPool() );
         GeoNameIterator iter = new GeoNameIterator(url);
-        GeoNameLoader.load(iter, session, "geoNames.geoname",  gn -> idxTable.insert( gn.filter, gn.geonameid));
+        GeoNameLoader.load(iter, bulkExecutor, "geoNames.geoname",  gn -> idxTable.insert( gn.filter, gn.geonameid));
     }
 
     /**
