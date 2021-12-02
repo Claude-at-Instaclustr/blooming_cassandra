@@ -22,13 +22,22 @@ import java.io.InputStreamReader;
 import java.net.URL;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
+import java.util.concurrent.Executors;
+import java.util.function.Predicate;
+
 import org.apache.commons.collections4.bloomfilter.BloomFilter;
 import org.apache.commons.collections4.bloomfilter.SimpleBloomFilter;
 import org.apache.commons.collections4.bloomfilter.hasher.HasherCollection;
+import org.apache.commons.logging.Log;
+import org.apache.jena.util.iterator.ExtendedIterator;
+import org.apache.jena.util.iterator.WrappedIterator;
 
 import com.datastax.driver.core.Cluster;
+import com.datastax.driver.core.Host;
 import com.datastax.driver.core.ResultSet;
 import com.datastax.driver.core.Session;
+import com.instaclustr.cassandra.BulkExecutor;
 import com.instaclustr.geonames.GeoName;
 import com.instaclustr.geonames.GeoNameHasher;
 import com.instaclustr.geonames.GeoNameIterator;
@@ -83,7 +92,7 @@ public class Demo implements AutoCloseable {
     }
 
     /**
-     * Initialze the table.  This will create the keyspace, table and index.
+     * Initialize the table.  This will create the keyspace, table and index.
      */
     public void initTable() {
         session.execute(keyspace);
@@ -91,6 +100,30 @@ public class Demo implements AutoCloseable {
         session.execute(String.format( index, tableName ));
     }
 
+    class Throttle implements Predicate<GeoName> {
+        int count = 0;
+        int maxBlock;
+        int delay;
+
+        Throttle( int maxBlock, int delay ) {
+            this.maxBlock = maxBlock;
+            this.delay = delay;
+        }
+
+        @Override
+        public boolean test(GeoName t) {
+            count++;
+            if ((count % maxBlock) == 0) {
+                try {
+                    Thread.sleep( delay );
+                } catch (InterruptedException e) {
+                    // do nothing
+                }
+            }
+            return true;
+        }
+
+    }
     /**
      * Loads Geoname data from the URL.  The URL is assumed to point to an `allCountries` formatted file.
      * See Geonames in blooming-test-helpers for info.
@@ -98,8 +131,10 @@ public class Demo implements AutoCloseable {
      * @throws IOException on I/O error.
      */
     public void load(URL url) throws IOException {
-        try (GeoNameIterator iter = new GeoNameIterator(url)) {
-            GeoNameLoader.load(iter, session, tableName);
+        BulkExecutor bulkExecutor = new BulkExecutor(session, Executors.newFixedThreadPool(2), 2 );
+        try (GeoNameIterator geoNameIterator = new GeoNameIterator(url)) {
+            //ExtendedIterator<GeoName> iter = WrappedIterator.create(geoNameIterator).filterKeep( new Throttle( 500, 1000));
+            GeoNameLoader.load(geoNameIterator, bulkExecutor, tableName);
         }
     }
 

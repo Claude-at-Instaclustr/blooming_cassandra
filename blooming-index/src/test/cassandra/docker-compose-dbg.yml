@@ -7,6 +7,7 @@ services:
       - "8000:8000"
     volumes:
       - ./data:/var/lib/cassandra/data/
+      - ./logs:/opt/cassandra/logs/
       - ./cassandra.in.sh:/opt/cassandra/bin/cassandra.in.sh
     environment:
       MAX_HEAP_SIZE: "128M"
