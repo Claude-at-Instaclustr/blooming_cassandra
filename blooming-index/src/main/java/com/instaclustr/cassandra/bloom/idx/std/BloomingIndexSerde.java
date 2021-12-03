@@ -117,7 +117,7 @@ public class BloomingIndexSerde {
      */
     public long getEstimatedResultRows(double m, double k, double n) {
         logger.debug("getEstimatedResultRows( {}, {}, {} )", m, k, n);
-        int buckets = indexCfs.getMeanRowCount();
+        long buckets = indexCfs.estimateKeys();
         if (buckets == 0) {
             logger.debug("getEstimatedResultRows - No data in index, returning 0");
             return 0;

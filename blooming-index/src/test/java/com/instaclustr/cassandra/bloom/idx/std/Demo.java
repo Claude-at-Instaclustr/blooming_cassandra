@@ -69,7 +69,7 @@ public class Demo implements AutoCloseable {
     private static final String table = "CREATE TABLE IF NOT EXISTS %s (geonameid text, name text, asciiname text, alternatenames text, latitude text, longitude text, feature_class text,feature_code text,country_code text,cc2 text,admin1_code text,admin2_code text, admin3_code text, admin4_code text, population text, elevation text, dem text, timezone text, modification_date text,filter blob,PRIMARY KEY (geonameid ));";
 
     private static final String index = "CREATE CUSTOM INDEX IF NOT EXISTS ON %s(filter) USING 'com.instaclustr.cassandra.bloom.idx.std.BloomingIndex'"
-            + " WITH OPTIONS = {'numberOfBits':'302', 'numberofItems':'10', 'numberOfFunctions':'21' }";
+            + " WITH OPTIONS = {'numberOfBits':'302', 'numberOfItems':'10', 'numberOfFunctions':'21' }";
 
     private static final String query = "SELECT * FROM %s WHERE filter = %s";
 

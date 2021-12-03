@@ -233,8 +233,6 @@ public class BloomingIndexer implements Indexer {
             }
         }
 
-
-
         if (oldBytes.length == 0) {
             if (newBytes.length != 0) {
                 insertRow(newRowData, BFUtils.getIndexKeys(newBytes));

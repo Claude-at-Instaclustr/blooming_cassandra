@@ -161,6 +161,8 @@ public class BloomingIndex implements Index {
      */
     private final double n;
 
+    private final int maxThreads;
+
     /**
      * Constructor
      * @param baseCfs  The the base table.
@@ -185,7 +187,7 @@ public class BloomingIndex implements Index {
         m = parseInt(indexDef.options, "numberOfBits");
         n = parseInt(indexDef.options, "numberOfItems");
         k = parseInt(indexDef.options, "numberOfFunctions");
-
+        maxThreads = parseInt(indexDef.options, "maxThreads");
     }
 
     /**
@@ -324,7 +326,9 @@ public class BloomingIndex implements Index {
         // then serde.getEstimatedResultRows() will return -1.
         // in this case we asume the index is used on all the rows in the base table.
         long result = serde.getEstimatedResultRows(m, k, n);
-        return result == -1 ? baseCfs.getMeanRowCount() : result;
+        result =  result == -1 ? baseCfs.estimateKeys() : result;
+        logger.debug("getEstimatedResultRows returning {}", result);
+        return result;
     }
 
     /**
@@ -357,7 +361,7 @@ public class BloomingIndex implements Index {
         Optional<RowFilter.Expression> target = getTargetExpression(command.rowFilter().getExpressions());
 
         if (target.isPresent()) {
-            return new BloomingSearcher(indexedColumn, baseCfs, serde, command, target.get());
+            return new BloomingSearcher(maxThreads, indexedColumn, baseCfs, serde, command, target.get());
         }
 
         return null;

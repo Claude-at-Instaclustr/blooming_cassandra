@@ -17,15 +17,16 @@
 package com.instaclustr.cassandra.bloom.idx.std;
 
 import java.nio.ByteBuffer;
+import java.nio.charset.CharacterCodingException;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
+import java.util.List;
 import java.util.Set;
+import java.util.SortedSet;
 import java.util.TreeSet;
-import java.util.concurrent.Executor;
-import java.util.concurrent.Executors;
 import java.util.concurrent.Semaphore;
-import java.util.function.Consumer;
 import java.util.function.Function;
 
 import org.apache.cassandra.db.ColumnFamilyStore;
@@ -38,21 +39,22 @@ import org.apache.cassandra.db.filter.DataLimits;
 import org.apache.cassandra.db.filter.RowFilter;
 import org.apache.cassandra.db.partitions.UnfilteredPartitionIterator;
 import org.apache.cassandra.db.rows.Row;
-import org.apache.cassandra.db.rows.RowIterator;
 import org.apache.cassandra.db.rows.UnfilteredRowIterator;
-import org.apache.cassandra.db.rows.UnfilteredRowIterators;
 import org.apache.cassandra.index.Index.Searcher;
 import org.apache.cassandra.index.internal.CassandraIndexSearcher;
 import org.apache.cassandra.schema.ColumnMetadata;
 import org.apache.cassandra.schema.TableMetadata;
+import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.jena.util.iterator.ExtendedIterator;
 import org.apache.jena.util.iterator.WrappedIterator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.instaclustr.cassandra.bloom.idx.CountingFilter;
 import com.instaclustr.cassandra.bloom.idx.IndexKey;
-import com.instaclustr.cassandra.bloom.idx.IndexMap;
+import com.instaclustr.cassandra.bloom.idx.std.searcher.LinearSearchMerge;
+import com.instaclustr.cassandra.bloom.idx.std.searcher.SearchMerge;
+import com.instaclustr.cassandra.bloom.idx.std.searcher.ThreadedSearchMerge;
+
 
 /**
  * Handles searching the index for mathing filters.
@@ -67,7 +69,7 @@ public class BloomingSearcher implements Searcher {
     /**
      * The Serde for index I/O.
      */
-    private final BloomingIndexSerde serde;
+    final BloomingIndexSerde serde;
     /**
      * The read command being executed.
      */
@@ -84,9 +86,8 @@ public class BloomingSearcher implements Searcher {
     /**
      * A function to convert a row from the base table into the a key for the row.
      */
-    private final Function<Row, DecoratedKey> row2Key;
+    final Function<Row, DecoratedKey> row2Key;
 
-    private final Executor executor;
 
     /**
      * Constructor.
@@ -96,15 +97,13 @@ public class BloomingSearcher implements Searcher {
      * @param command The read command being executed.
      * @param expression The expression to use for the search.
      */
-    public BloomingSearcher(final ColumnMetadata indexedColumn, final ColumnFamilyStore baseCfs,
+    public BloomingSearcher(final int maxThreads, final ColumnMetadata indexedColumn, final ColumnFamilyStore baseCfs,
             final BloomingIndexSerde serde, final ReadCommand command, final RowFilter.Expression expression) {
         this.baseCfs = baseCfs;
         this.indexedColumn = indexedColumn;
         this.serde = serde;
         this.command = command;
         this.expression = expression;
-        this.executor = Executors.newFixedThreadPool(5);
-
 
         // A function to convert a serde row to the base key
         this.row2Key = new Function<Row, DecoratedKey>() {
@@ -124,6 +123,7 @@ public class BloomingSearcher implements Searcher {
         };
     }
 
+
     @Override
     public UnfilteredPartitionIterator search(ReadExecutionController executionController) {
 
@@ -131,9 +131,13 @@ public class BloomingSearcher implements Searcher {
         // Create a function to convert DecoratedKey from the index to a Row from the
         // base table.
         Function<DecoratedKey, UnfilteredRowIterator> key2RowIter = new Function<DecoratedKey, UnfilteredRowIterator>() {
-
             @Override
             public UnfilteredRowIterator apply(DecoratedKey hit) {
+                try {
+                    logger.debug( "Reading row {}", ByteBufferUtil.string(hit.getKey()));
+                } catch (CharacterCodingException e) {
+                    logger.debug( "Reading row {}", hit);
+                }
                 ColumnFilter extendedFilter = getExtendedFilter(command.columnFilter());
                 SinglePartitionReadCommand dataCmd = SinglePartitionReadCommand.create(baseCfs.metadata(),
                         command.nowInSec(), extendedFilter, command.rowFilter(), DataLimits.NONE, hit,
@@ -155,28 +159,26 @@ public class BloomingSearcher implements Searcher {
          * The result is an iterator over the set of solutions for each IndexKey in
          * queryKeys.
          */
-        SearchMerge merger = new SearchMerge(queryKeys, executionController );
-        Set<DecoratedKey> result = merger.execute();
-
-//        ExtendedIterator<Set<DecoratedKey>> maps = WrappedIterator.create(queryKeys.iterator()).mapWith(IndexKey::asMap)
-//                .mapWith(idxMap -> {
-//                    logger.debug("Processing {}", idxMap);
-//
-//                    idxMap.getKeys().mapWith(idxKey -> {
-//                        return UnfilteredRowIterators.filter(serde.read(idxKey, command.nowInSec(), executionController),
-//                                command.nowInSec());
-//                    }).forEach(row -> {
-//                        WrappedIterator.create(row).mapWith(row2Key).forEach(mapSet::add);
-//                    });
-//                    logger.debug("Completed Returning {} entries", mapSet.size());
-//                    return mapSet;
-//                });
-
-
+        SearchMerge.Config config = new SearchMerge.Config(serde, row2Key, queryKeys, executionController, command.nowInSec() );
+       // SearchMerge merger = new ThreadedSearchMerge(config);
+        SearchMerge merger = new LinearSearchMerge( config );
+        SortedSet<DecoratedKey> result = merger.execute();
 
         // return a PartitionIterator that contains all the results.
-        return createUnfilteredPartitionIterator(WrappedIterator.create(result.iterator()).mapWith(key2RowIter),
-                command.metadata());
+        ExtendedIterator<UnfilteredRowIterator> rowIterIter = WrappedIterator.create(result.iterator())
+                .mapWith(key2RowIter)
+                .filterDrop( ri -> {
+                    if (ri == null) {
+                        return true;
+                    }
+                if (ri.isEmpty()) {
+                    ri.close();
+                    return true;
+                }
+                return false;
+                });
+
+        return createUnfilteredPartitionIterator(rowIterIter, command.metadata());
 
     }
 
@@ -202,11 +204,14 @@ public class BloomingSearcher implements Searcher {
      * @return an UnfilteredPartitionIterator that will return the rows from the UnfilteredRowIterator.
      */
     private static UnfilteredPartitionIterator createUnfilteredPartitionIterator(
-            ExtendedIterator<UnfilteredRowIterator> theRowIterator, TableMetadata theMetadata) {
+            ExtendedIterator<UnfilteredRowIterator> rowIterIter , TableMetadata tableMetadata) {
+
+
 
         return new UnfilteredPartitionIterator() {
-            ExtendedIterator<UnfilteredRowIterator> rowIter = theRowIterator;
-            TableMetadata metadata = theMetadata;
+            ExtendedIterator<UnfilteredRowIterator> rowIter = rowIterIter;
+            TableMetadata metadata = tableMetadata;
+            UnfilteredRowIterator last = null;
 
             @Override
             public TableMetadata metadata() {
@@ -220,7 +225,17 @@ public class BloomingSearcher implements Searcher {
 
             @Override
             public UnfilteredRowIterator next() {
-                return rowIter.next();
+                if (last != null) {
+                    last.close();
+                }
+                last = rowIter.next();
+                try {
+                    logger.debug( "row {} empty? {}", ByteBufferUtil.string( last.partitionKey().getKey() ), last.isEmpty());
+                } catch (CharacterCodingException e) {
+                    // TODO Auto-generated catch block
+                    logger.debug( "row {} empty? {}", last.partitionKey(), last.isEmpty() );
+                }
+                return last;
             }
 
             @Override
@@ -230,164 +245,13 @@ public class BloomingSearcher implements Searcher {
 
             @Override
             public void close() {
+                if (last != null) {
+                    last.close();
+                }
                 rowIter.close();
             }
         };
     }
 
-    private class KeyMerge implements Runnable {
-        private final IndexMap  indexMap;
-        private final ReadExecutionController executionController;
-        private final Consumer<Set<DecoratedKey>> callback;
-        private final Semaphore permit;
-        private Set<DecoratedKey> result;
-        private int callbackCount = 0;
-
-        public KeyMerge(Semaphore permit, Consumer<Set<DecoratedKey>> callback, IndexMap indexMap,ReadExecutionController executionController) {
-            this.indexMap = indexMap;
-            this.executionController = executionController;
-            this.callback = callback;
-            this.permit = permit;
-        }
-
-        @Override
-        public void run() {
-            CountingFilter<IndexKey> counter = new CountingFilter<IndexKey>();
-            logger.debug("Processing {}", indexMap);
-
-            try {
-                indexMap.getKeys()
-                    .filterKeep( counter )
-                    .mapWith( this::searcher )
-                    .forEach( executor::execute );
-
-                while (callbackCount < counter.getCount()) {
-                    synchronized( this ) {
-                        wait( 500 );
-                    }
-                }
-
-
-            } catch (AbortException e) {
-                logger.error( "Processing aborted");
-            } catch (InterruptedException e) {
-                logger.warn( "Interrupted", e );
-            } finally {
-                callback.accept( result );
-            }
-        }
-
-        private SearchingRunnable searcher(IndexKey key)  {
-            try {
-                permit.acquire();
-            } catch (InterruptedException e) {
-                throw new AbortException();
-            }
-            return new SearchingRunnable( this::consumer, key, executionController );
-        }
-
-        public synchronized void consumer(ExtendedIterator<DecoratedKey> iter) {
-            if (result == null) {
-                result = iter.toSet();
-                logger.debug( "initial {} keys", result.size() );
-            } else {
-                iter.forEach( result::add );
-                logger.debug( "after merge {} keys", result.size() );
-            }
-            callbackCount++;
-            permit.release();
-        }
-    }
-
-    private class SearchingRunnable implements Runnable {
-        private final Consumer<ExtendedIterator<DecoratedKey>> callback;
-        private final IndexKey indexKey;
-        private final ReadExecutionController executionController;
-        private int nowInSec;
-
-        SearchingRunnable(Consumer<ExtendedIterator<DecoratedKey>> callback, IndexKey indexKey, ReadExecutionController executionController)
-        {
-            this.callback = callback;
-            this.indexKey = indexKey;
-            this.executionController = executionController;
-        }
-
-        @Override
-        public void run() {
-            RowIterator iter = UnfilteredRowIterators.filter(serde.read(indexKey, nowInSec, executionController),
-                        nowInSec );
-            callback.accept( WrappedIterator.create( iter ).mapWith(row2Key) );
-
-        }
-    }
-
-    private class SearchMerge implements Consumer<Set<DecoratedKey>> {
-
-        private final Set<IndexKey> indexKeys;
-        private final ReadExecutionController executionController;
-        private final Semaphore permit;
-
-        private Set<DecoratedKey> result = null;
-        private int callbackCount = 0;
-        private boolean errorDetected = false;
-
-        public SearchMerge( final Set<IndexKey> indexKeys, final ReadExecutionController executionController)
-        {
-            this.indexKeys = indexKeys;
-            this.executionController = executionController;
-            this.permit  = new Semaphore(20);
-        }
-
-
-        public Set<DecoratedKey> execute() {
-
-            try {
-                WrappedIterator.create(indexKeys.iterator()).mapWith(IndexKey::asMap)
-                .mapWith( this::keyMerge )
-                .forEach( executor::execute );
-
-                while (callbackCount < indexKeys.size() && !errorDetected) {
-                    synchronized( this ) {
-                        try {
-                            wait( 500 );
-                        } catch (InterruptedException e) {
-                            logger.warn( "Interrupted", e );
-                        }
-                    }
-                }
-                logger.debug("Completed Returning {} entries", result.size());
-            } catch (AbortException e) {
-                logger.warn("Processing Aborted -- Returning {} entries", result.size() );
-            }
-            return result;
-        }
-
-        KeyMerge keyMerge(IndexMap map)  {
-            try {
-                permit.acquire();
-            } catch (InterruptedException e) {
-                throw new AbortException();
-            }
-            return new KeyMerge( permit, this::accept, map, executionController );
-        }
-
-        @Override
-        public synchronized void accept(Set<DecoratedKey> keys) {
-            if (keys == null) {
-                this.errorDetected = true;
-            } else {
-                if (result != null) {
-                    result.retainAll( keys );
-                } else {
-                    result = keys;
-                }
-            }
-            permit.release();
-            this.notify();
-        }
-
-    }
-
-    private class AbortException extends RuntimeException {}
 
 }

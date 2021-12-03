@@ -2,7 +2,7 @@
 #
 cd `dirname $0`
 
-if [ -z $1 ] 
+if [ -z "$1" ] 
 then
 	DOCKER_PARAMS=""
 else
@@ -11,7 +11,7 @@ fi
 
 docker-compose ${DOCKER_PARAMS} up -d
 cnt=`docker-compose ${DOCKER_PARAMS} logs | grep -c "Startup complete"`
-if [ -n $1 ]
+if [ -n "$1" ]
 then
 	echo "Start debugger"
 fi
@@ -23,4 +23,5 @@ do
 done
 
 ./setLogs.sh
-docker-compose ${DOCKER_PARAMS} logs -f
+
+#docker-compose ${DOCKER_PARAMS} logs -f
