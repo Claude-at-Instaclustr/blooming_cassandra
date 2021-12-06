@@ -27,22 +27,38 @@ import com.instaclustr.iterator.util.WrappedIterator;
  */
 public class IndexMap {
     /**
-     * The byte position in the bloom filter for this map
+     * A list of bytes to matching bytes in the bloom filter.
      */
-    private int position;
-    /**
-     * All of the matching codes for the position.
-     */
-    private int[] codes;
+    private static final int[][] byteTable;
 
+    static {
+        // populate the byteTable annd selectivity tables.
+        int limit = (1 << Byte.SIZE);
+        byteTable = new int[limit][];
+        int[] buffer;
+        int count = 0;
+
+        for (int i = 1; i < limit; i++) {
+            count = 0;
+            buffer = new int[256];
+            for (int j = 1; j < limit; j++) {
+                if ((j & i) == i) {
+                    buffer[count++] = j;
+                }
+            }
+            byteTable[i] = new int[count];
+            System.arraycopy(buffer, 0, byteTable[i], 0, count);
+        }
+    }
+
+    private IndexKey key;
     /**
      * Constructor.
      * @param position the byte position of the code in the bloom filter.
      * @param codes that match the code from the filter.
      */
-    public IndexMap(int position, int[] codes) {
-        this.position = position;
-        this.codes = codes;
+    public IndexMap(IndexKey key) {
+        this.key = key;
     }
 
     /**
@@ -50,20 +66,21 @@ public class IndexMap {
      * @return the position of the codes in the bloom filter.
      */
     public int getPosition() {
-        return position;
+        return key.getPosition();
     }
 
     /**
      * Gets the codes for this key.
      * @return the codes that match the bloom filter at the position.
      */
-    public int[] getCode() {
-        return codes;
+    public int[] getCodes() {
+        return byteTable[key.getCode()];
     }
 
     @Override
     public String toString() {
-        StringBuilder sb = new StringBuilder(String.format("IndexMap[%d, [", position, hashCode()));
+        StringBuilder sb = new StringBuilder(String.format("IndexMap[%d, [", getPosition() ));
+        int[] codes = getCodes();
         for (int i = 0; i < codes.length; i++) {
             sb.append(String.format("%s 0x%02x", i > 0 ? "," : "", codes[i]));
         }
@@ -80,13 +97,13 @@ public class IndexMap {
 
             @Override
             public boolean hasNext() {
-                return idx < codes.length;
+                return idx < getCodes().length;
             }
 
             @Override
             public IndexKey next() {
                 if (hasNext()) {
-                    return new IndexKey(getPosition(), codes[idx++]);
+                    return new IndexKey(getPosition(), getCodes()[idx++]);
                 }
                 throw new NoSuchElementException();
             }

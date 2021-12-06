@@ -26,10 +26,6 @@ import java.nio.ByteBuffer;
 public class IndexKey implements Comparable<IndexKey> {
 
     /**
-     * A list of bytes to matching bytes in the bloom filter.
-     */
-    private static final int[][] byteTable;
-    /**
      * the selectivity for each byte.
      */
     private static final int[] selectivityTable;
@@ -37,24 +33,15 @@ public class IndexKey implements Comparable<IndexKey> {
     static {
         // populate the byteTable annd selectivity tables.
         int limit = (1 << Byte.SIZE);
-        byteTable = new int[limit][];
         selectivityTable = new int[limit];
-        int[] buffer;
-        int count = 0;
 
         for (int i = 1; i < limit; i++) {
-            count = 0;
-            buffer = new int[256];
             for (int j = 1; j < limit; j++) {
                 if ((j & i) == i) {
-                    buffer[count++] = j;
                     selectivityTable[j]++;
                 }
             }
-            byteTable[i] = new int[count];
-            System.arraycopy(buffer, 0, byteTable[i], 0, count);
         }
-
     }
 
     /**
@@ -134,7 +121,7 @@ public class IndexKey implements Comparable<IndexKey> {
      * @see IndexMap#IndexMap(IndexKey)
      */
     public IndexMap asMap() {
-        return new IndexMap(getPosition(), byteTable[getCode()]);
+        return new IndexMap(this);
     }
 
     /**

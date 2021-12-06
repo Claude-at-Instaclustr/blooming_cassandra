@@ -392,6 +392,10 @@ public class BloomingIndex implements Index {
     @Override
     public long getEstimatedResultRows() {
         logger.debug("getEstimatedResultRows");
+        logger.debug( "baseCfs estimateKeys {}", baseCfs.estimateKeys());
+        logger.debug( "baseCfs getMeanPartitionSize {}", baseCfs.getMeanPartitionSize());
+        logger.debug( "baseCfs getMeanRowCount {}", baseCfs.getMeanRowCount());
+
         // If any of the parameters are not set and there is data in the index
         // then serde.getEstimatedResultRows() will return -1.
         // in this case we asume the index is used on all the rows in the base table.

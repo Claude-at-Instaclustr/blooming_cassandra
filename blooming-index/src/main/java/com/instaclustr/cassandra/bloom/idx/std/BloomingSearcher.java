@@ -18,11 +18,13 @@ package com.instaclustr.cassandra.bloom.idx.std;
 
 import java.nio.ByteBuffer;
 import java.nio.charset.CharacterCodingException;
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.SortedSet;
 import java.util.TreeSet;
 import java.util.function.Function;
+import java.util.function.Predicate;
 
 import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.DecoratedKey;
@@ -40,6 +42,11 @@ import org.apache.cassandra.index.Index.Searcher;
 import org.apache.cassandra.schema.ColumnMetadata;
 import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.utils.ByteBufferUtil;
+import org.apache.commons.collections4.bloomfilter.BloomFilter;
+import org.apache.commons.collections4.bloomfilter.Shape;
+import org.apache.commons.collections4.bloomfilter.SimpleBloomFilter;
+import org.apache.commons.collections4.bloomfilter.hasher.Hasher;
+import org.apache.commons.collections4.bloomfilter.hasher.SimpleHasher;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -147,10 +154,6 @@ public class BloomingSearcher implements Searcher {
          * The result is an iterator over the set of solutions for each IndexKey in
          * queryKeys.
          */
-        // SearchMerge.Config config = new SearchMerge.Config(serde, row2Key, queryKeys,
-        // executionController, command.nowInSec() );
-        // SearchMerge merger = new ThreadedSearchMerge(config);
-        // SearchMerge merger = new LinearSearchMerge( config );
         SortedSet<DecoratedKey> result = searchMerge(queryKeys, executionController, command.nowInSec());
 
         // return a PartitionIterator that contains all the results.
@@ -187,6 +190,7 @@ public class BloomingSearcher implements Searcher {
      */
     private SortedSet<DecoratedKey> searchMerge(final Set<IndexKey> queryKeys,
             final ReadExecutionController executionController, int nowInSec) {
+        SearchMergeFilter searchMergeFilter = new SearchMergeFilter();
         /*
          * For each key in the indexKeys set, create the associated IndexMap and then
          * process each IndexKey in the IndexMap collecting the base table keys from the
@@ -202,8 +206,9 @@ public class BloomingSearcher implements Searcher {
                     idxMap.getKeys().mapWith(idxKey -> {
                         return UnfilteredRowIterators.filter(serde.read(idxKey, nowInSec, executionController),
                                 nowInSec);
-                    }).forEach(row -> {
-                        WrappedIterator.create(row).mapWith(row2Key).forEach(mapSet::add);
+                    }).forEach(rowIter -> {
+                        // we use foreach here so that the row iterator will get closed.
+                        WrappedIterator.create(rowIter).mapWith(row2Key).filterKeep( searchMergeFilter ).forEach(mapSet::add);
                     });
                     logger.debug("Completed Returning {} entries", mapSet.size());
                     return mapSet;
@@ -217,12 +222,15 @@ public class BloomingSearcher implements Searcher {
         SortedSet<DecoratedKey> result = new TreeSet<DecoratedKey>();
         if (maps.hasNext()) {
             result.addAll(maps.next());
+            searchMergeFilter.rebuildFilter( result  );
             while (maps.hasNext() && !result.isEmpty()) {
                 result.retainAll(maps.next());
+                if (result.size() > 0  && searchMergeFilter.getLastN()/result.size() >= 10) {
+                    searchMergeFilter.rebuildFilter(result);
+                }
                 logger.debug("Merge yielded {} entries", result.size());
             }
         }
-
         return result;
     }
 
@@ -296,4 +304,46 @@ public class BloomingSearcher implements Searcher {
         };
     }
 
+    private class SearchMergeFilter implements Predicate<DecoratedKey> {
+        private int lastN = 0;
+        private BloomFilter bf = null;
+
+
+
+        @Override
+        public boolean test(DecoratedKey key) {
+            if (bf == null) {
+                return true;
+            }
+
+            long[] buff = new long[2];
+            key.filterHash(buff);
+
+            Hasher hasher = new SimpleHasher( buff[0], buff[1] );
+            if (bf.contains( hasher )) {
+                return true;
+            }
+            return false;
+        }
+
+        public void rebuildFilter( Set<DecoratedKey> keys ) {
+            logger.debug( "Rebuilding gatekeeper for {} keys", keys.size());
+            // below 12 the bloom filter falls below 8B in size so just keep it.
+            if (lastN <=12 || keys.size() <= 1) {
+                return;
+            }
+            Shape shape = Shape.Factory.fromNP( keys.size(), 1.0/keys.size());
+            bf = new SimpleBloomFilter( shape );
+            for (DecoratedKey key : keys) {
+                bf.mergeInPlace( new SimpleHasher( ByteBufferUtil.getArray( key.getKey() )) );
+            }
+            lastN = keys.size();
+        }
+
+        public int getLastN() {
+            return lastN;
+        }
+
+
+    }
 }

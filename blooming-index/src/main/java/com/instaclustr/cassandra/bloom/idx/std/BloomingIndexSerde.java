@@ -114,6 +114,11 @@ public class BloomingIndexSerde {
      */
     public long getEstimatedResultRows(double entriesPerRow) {
         logger.debug("getEstimatedResultRows( {} )", entriesPerRow);
+        logger.debug( "indexCfs estimateKeys {}", indexCfs.estimateKeys());
+        logger.debug( "indexCfs getMeanPartitionSize {}", indexCfs.getMeanPartitionSize());
+        logger.debug( "indexCfs getMeanRowCount {}", indexCfs.getMeanRowCount());
+
+
         long entries = indexCfs.estimateKeys();
         if (entries == 0) {
             logger.debug("getEstimatedResultRows - No data in index, returning 0");

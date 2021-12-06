@@ -131,7 +131,7 @@
 			<dependency>
 				<groupId>org.apache.commons</groupId>
 				<artifactId>commons-collections4</artifactId>
-				<version>4.5-SNAPSHOT</version>
+				<version>${commons-collections4-version}</version>
 			</dependency>
 			<dependency>
 				<groupId>commons-codec</groupId>
@@ -158,6 +158,7 @@
 	<properties>
 		<datastax-version>3.11.0</datastax-version>
 		<cassandra-version>4.0.1</cassandra-version>
+		<commons-collections4-version>4.5-SNAPSHOT</commons-collections4-version>
 	</properties>
 	<repositories>
 		<repository>
