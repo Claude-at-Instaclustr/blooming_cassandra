@@ -43,7 +43,6 @@ import org.apache.cassandra.db.filter.RowFilter;
 import org.apache.cassandra.db.lifecycle.SSTableSet;
 import org.apache.cassandra.db.lifecycle.View;
 import org.apache.cassandra.db.marshal.AbstractType;
-import org.apache.cassandra.db.marshal.BytesType;
 import org.apache.cassandra.db.partitions.PartitionIterator;
 import org.apache.cassandra.db.partitions.PartitionUpdate;
 import org.apache.cassandra.db.rows.Cell;
@@ -150,7 +149,6 @@ public class BloomingIndex implements Index {
      */
     private BloomingIndexSerde serde;
 
-
     /**
      * The estimated number of entries in the index table per row of the base table.
      * may be 0.0;
@@ -182,7 +180,8 @@ public class BloomingIndex implements Index {
 
         final double numberOfBits = parseInt(indexDef.options, "numberOfBits");
 
-        // The maximum number of hash functions used for each item in the Bloom filter (May be 0.0)
+        // The maximum number of hash functions used for each item in the Bloom filter
+        // (May be 0.0)
         final double numberOfFunctions = parseInt(indexDef.options, "numberOfFunctions");
 
         // The maximum number of items the Bloom filter (May be 0.0)
@@ -206,10 +205,10 @@ public class BloomingIndex implements Index {
             }
         }
 
-        indexEntriesPerRow = calculateRatio ? calculateIndexPerRow( numberOfBits,numberOfItems,numberOfFunctions ) : 0.0;
+        indexEntriesPerRow = calculateRatio ? calculateIndexPerRow(numberOfBits, numberOfItems, numberOfFunctions)
+                : 0.0;
 
     }
-
 
     /**
      * Parses integer values from a map of options.
@@ -227,8 +226,7 @@ public class BloomingIndex implements Index {
         }
     }
 
-    private static double calculateIndexPerRow( double m, double n, double k ) {
-
+    private static double calculateIndexPerRow(double m, double n, double k) {
 
         // kn = number of bits requested from hasher
         double kn = k * n;
@@ -262,11 +260,12 @@ public class BloomingIndex implements Index {
         // expected number of bits per entry
         double bits = kn - collisions;
         /*
-         * the number of index entries per row is the lesser of the number of bits or the number of
-         * bytes in the bloom filter.  The reasoning here is that the bits are evenly distributed
-         * across the bloom filter, so the probability of a bit being in the same byte as another bit
-         * reaches 1 when there are more bits than bytes.  Since we only record bytes in the index
-         * we need the minimum of the two values.
+         * the number of index entries per row is the lesser of the number of bits or
+         * the number of bytes in the bloom filter. The reasoning here is that the bits
+         * are evenly distributed across the bloom filter, so the probability of a bit
+         * being in the same byte as another bit reaches 1 when there are more bits than
+         * bytes. Since we only record bytes in the index we need the minimum of the two
+         * values.
          */
         return Math.min(bits, m / Byte.SIZE);
 
@@ -396,8 +395,8 @@ public class BloomingIndex implements Index {
         // If any of the parameters are not set and there is data in the index
         // then serde.getEstimatedResultRows() will return -1.
         // in this case we asume the index is used on all the rows in the base table.
-        long result = serde.getEstimatedResultRows( indexEntriesPerRow );
-        result =  result == -1 ? baseCfs.estimateKeys() : result;
+        long result = serde.getEstimatedResultRows(indexEntriesPerRow);
+        result = result == -1 ? baseCfs.estimateKeys() : result;
         logger.debug("getEstimatedResultRows returning {}", result);
         return result;
     }

@@ -12,8 +12,7 @@ public class CountingFilter<T> implements Predicate<T> {
     /**
      * the counter.
      */
-    private int count=0;
-
+    private int count = 0;
 
     @Override
     public boolean test(T arg) {

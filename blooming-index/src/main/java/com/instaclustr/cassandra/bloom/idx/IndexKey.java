@@ -17,7 +17,6 @@
 package com.instaclustr.cassandra.bloom.idx;
 
 import java.nio.ByteBuffer;
-import com.instaclustr.cassandra.bloom.idx.std.BFUtils;
 
 /**
  * A Multidimensional Bloom filter entry key.
@@ -58,7 +57,6 @@ public class IndexKey implements Comparable<IndexKey> {
 
     }
 
-
     /**
      * The byte position in the bloom filter for this code
      */
@@ -72,8 +70,6 @@ public class IndexKey implements Comparable<IndexKey> {
      * The number of bytes the data for the key uses.
      */
     public static final int BYTES = Integer.BYTES * 2;
-
-
 
     /**
      * Constructor.

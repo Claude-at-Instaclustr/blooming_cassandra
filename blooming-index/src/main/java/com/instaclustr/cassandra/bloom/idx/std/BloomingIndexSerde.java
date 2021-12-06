@@ -27,7 +27,6 @@ import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.db.DeletionTime;
 import org.apache.cassandra.db.Keyspace;
 import org.apache.cassandra.db.LivenessInfo;
-import org.apache.cassandra.db.ReadCommand;
 import org.apache.cassandra.db.ReadExecutionController;
 import org.apache.cassandra.db.SinglePartitionReadCommand;
 import org.apache.cassandra.db.WriteContext;
@@ -245,8 +244,7 @@ public class BloomingIndexSerde {
      * @param executionController the execution controller to use.
      * @return the UnfilteredRowIterator containing all matching entries.
      */
-    public UnfilteredRowIterator read(IndexKey indexKey, int nowInSec,
-            ReadExecutionController executionController) {
+    public UnfilteredRowIterator read(IndexKey indexKey, int nowInSec, ReadExecutionController executionController) {
         TableMetadata indexMetadata = indexCfs.metadata();
         DecoratedKey valueKey = getIndexKeyFor(indexKey.asKey());
         return SinglePartitionReadCommand.fullPartitionRead(indexMetadata, nowInSec, valueKey)
@@ -265,7 +263,7 @@ public class BloomingIndexSerde {
         TableMetadata indexMetadata = indexCfs.metadata();
         DecoratedKey valueKey = getIndexKeyFor(indexKey.asKey());
         SinglePartitionReadCommand readCommand = SinglePartitionReadCommand.create(indexMetadata, nowInSec, valueKey,
-                buildIndexClustering( rowKey, clustering) );
+                buildIndexClustering(rowKey, clustering));
         try (ReadExecutionController readExecutionController = readCommand.executionController()) {
             return readCommand.queryMemtableAndDisk(indexCfs, readExecutionController);
         }

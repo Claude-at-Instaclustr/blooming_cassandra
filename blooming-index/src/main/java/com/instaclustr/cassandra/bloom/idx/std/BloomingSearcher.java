@@ -18,15 +18,10 @@ package com.instaclustr.cassandra.bloom.idx.std;
 
 import java.nio.ByteBuffer;
 import java.nio.charset.CharacterCodingException;
-import java.util.Collections;
-import java.util.HashMap;
 import java.util.HashSet;
-import java.util.Iterator;
-import java.util.List;
 import java.util.Set;
 import java.util.SortedSet;
 import java.util.TreeSet;
-import java.util.concurrent.Semaphore;
 import java.util.function.Function;
 
 import org.apache.cassandra.db.ColumnFamilyStore;
@@ -40,8 +35,8 @@ import org.apache.cassandra.db.filter.RowFilter;
 import org.apache.cassandra.db.partitions.UnfilteredPartitionIterator;
 import org.apache.cassandra.db.rows.Row;
 import org.apache.cassandra.db.rows.UnfilteredRowIterator;
+import org.apache.cassandra.db.rows.UnfilteredRowIterators;
 import org.apache.cassandra.index.Index.Searcher;
-import org.apache.cassandra.index.internal.CassandraIndexSearcher;
 import org.apache.cassandra.schema.ColumnMetadata;
 import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.utils.ByteBufferUtil;
@@ -51,10 +46,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.instaclustr.cassandra.bloom.idx.IndexKey;
-import com.instaclustr.cassandra.bloom.idx.std.searcher.LinearSearchMerge;
-import com.instaclustr.cassandra.bloom.idx.std.searcher.SearchMerge;
-import com.instaclustr.cassandra.bloom.idx.std.searcher.ThreadedSearchMerge;
-
 
 /**
  * Handles searching the index for mathing filters.
@@ -87,7 +78,6 @@ public class BloomingSearcher implements Searcher {
      * A function to convert a row from the base table into the a key for the row.
      */
     final Function<Row, DecoratedKey> row2Key;
-
 
     /**
      * Constructor.
@@ -123,10 +113,8 @@ public class BloomingSearcher implements Searcher {
         };
     }
 
-
     @Override
     public UnfilteredPartitionIterator search(ReadExecutionController executionController) {
-
 
         // Create a function to convert DecoratedKey from the index to a Row from the
         // base table.
@@ -134,9 +122,9 @@ public class BloomingSearcher implements Searcher {
             @Override
             public UnfilteredRowIterator apply(DecoratedKey hit) {
                 try {
-                    logger.debug( "Reading row {}", ByteBufferUtil.string(hit.getKey()));
+                    logger.debug("Reading row {}", ByteBufferUtil.string(hit.getKey()));
                 } catch (CharacterCodingException e) {
-                    logger.debug( "Reading row {}", hit);
+                    logger.debug("Reading row {}", hit);
                 }
                 ColumnFilter extendedFilter = getExtendedFilter(command.columnFilter());
                 SinglePartitionReadCommand dataCmd = SinglePartitionReadCommand.create(baseCfs.metadata(),
@@ -159,27 +147,83 @@ public class BloomingSearcher implements Searcher {
          * The result is an iterator over the set of solutions for each IndexKey in
          * queryKeys.
          */
-        SearchMerge.Config config = new SearchMerge.Config(serde, row2Key, queryKeys, executionController, command.nowInSec() );
-       // SearchMerge merger = new ThreadedSearchMerge(config);
-        SearchMerge merger = new LinearSearchMerge( config );
-        SortedSet<DecoratedKey> result = merger.execute();
+        // SearchMerge.Config config = new SearchMerge.Config(serde, row2Key, queryKeys,
+        // executionController, command.nowInSec() );
+        // SearchMerge merger = new ThreadedSearchMerge(config);
+        // SearchMerge merger = new LinearSearchMerge( config );
+        SortedSet<DecoratedKey> result = searchMerge(queryKeys, executionController, command.nowInSec());
 
         // return a PartitionIterator that contains all the results.
         ExtendedIterator<UnfilteredRowIterator> rowIterIter = WrappedIterator.create(result.iterator())
-                .mapWith(key2RowIter)
-                .filterDrop( ri -> {
+                .mapWith(key2RowIter).filterDrop(ri -> {
                     if (ri == null) {
                         return true;
                     }
-                if (ri.isEmpty()) {
-                    ri.close();
-                    return true;
-                }
-                return false;
+                    if (ri.isEmpty()) {
+                        ri.close();
+                        return true;
+                    }
+                    return false;
                 });
 
         return createUnfilteredPartitionIterator(rowIterIter, command.metadata());
 
+    }
+
+    /**
+     * Creates the SortedSet of decorated key for each key in the query keys.
+     * <p>
+     * For each key in the queryKeys set, create the associated IndexMap and then
+     * process each IndexKey in the IndexMap collecting the base table keys from the
+     * index in a set (mapSet).
+     *</p><p>
+     * The result is an iterator over the set of solutions for each IndexKey in
+     * queryKeys.</>
+     *
+     * @param queryKeys The keys from the query.
+     * @param executionController the execution controlelr for the read.
+     * @param nowInSec the time the execution started.
+     * @return A sorted set of DecoratedKeys for rows in the base table that match the query.
+     */
+    private SortedSet<DecoratedKey> searchMerge(final Set<IndexKey> queryKeys,
+            final ReadExecutionController executionController, int nowInSec) {
+        /*
+         * For each key in the indexKeys set, create the associated IndexMap and then
+         * process each IndexKey in the IndexMap collecting the base table keys from the
+         * index in a set (mapSet).
+         *
+         * The result is an iterator over the set of solutions for each IndexKey in
+         * indexKeys.
+         */
+        ExtendedIterator<Set<DecoratedKey>> maps = WrappedIterator.create(queryKeys.iterator()).mapWith(IndexKey::asMap)
+                .mapWith(idxMap -> {
+                    logger.debug("Processing {}", idxMap);
+                    Set<DecoratedKey> mapSet = new HashSet<DecoratedKey>();
+                    idxMap.getKeys().mapWith(idxKey -> {
+                        return UnfilteredRowIterators.filter(serde.read(idxKey, nowInSec, executionController),
+                                nowInSec);
+                    }).forEach(row -> {
+                        WrappedIterator.create(row).mapWith(row2Key).forEach(mapSet::add);
+                    });
+                    logger.debug("Completed Returning {} entries", mapSet.size());
+                    return mapSet;
+                });
+
+        /*
+         * Iterate over the solutions retaining the intersection of the result solution
+         * and the current solution. if the result solution becomes empty there is no
+         * solution to the query and we can return.
+         */
+        SortedSet<DecoratedKey> result = new TreeSet<DecoratedKey>();
+        if (maps.hasNext()) {
+            result.addAll(maps.next());
+            while (maps.hasNext() && !result.isEmpty()) {
+                result.retainAll(maps.next());
+                logger.debug("Merge yielded {} entries", result.size());
+            }
+        }
+
+        return result;
     }
 
     /**
@@ -204,9 +248,7 @@ public class BloomingSearcher implements Searcher {
      * @return an UnfilteredPartitionIterator that will return the rows from the UnfilteredRowIterator.
      */
     private static UnfilteredPartitionIterator createUnfilteredPartitionIterator(
-            ExtendedIterator<UnfilteredRowIterator> rowIterIter , TableMetadata tableMetadata) {
-
-
+            ExtendedIterator<UnfilteredRowIterator> rowIterIter, TableMetadata tableMetadata) {
 
         return new UnfilteredPartitionIterator() {
             ExtendedIterator<UnfilteredRowIterator> rowIter = rowIterIter;
@@ -230,10 +272,11 @@ public class BloomingSearcher implements Searcher {
                 }
                 last = rowIter.next();
                 try {
-                    logger.debug( "row {} empty? {}", ByteBufferUtil.string( last.partitionKey().getKey() ), last.isEmpty());
+                    logger.debug("row {} empty? {}", ByteBufferUtil.string(last.partitionKey().getKey()),
+                            last.isEmpty());
                 } catch (CharacterCodingException e) {
                     // TODO Auto-generated catch block
-                    logger.debug( "row {} empty? {}", last.partitionKey(), last.isEmpty() );
+                    logger.debug("row {} empty? {}", last.partitionKey(), last.isEmpty());
                 }
                 return last;
             }
@@ -252,6 +295,5 @@ public class BloomingSearcher implements Searcher {
             }
         };
     }
-
 
 }

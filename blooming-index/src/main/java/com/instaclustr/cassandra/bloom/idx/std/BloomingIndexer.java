@@ -170,7 +170,7 @@ public class BloomingIndexer implements Indexer {
         Clustering<?> clustering = row.clustering();
         LivenessInfo info = LivenessInfo.withExpirationTime(cell.timestamp(), cell.ttl(), cell.localDeletionTime());
         Consumer<IndexKey> operation = (r) -> serde.insert(r, key, clustering, info, ctx);
-        update(operation, keys == null ? BFUtils.getIndexKeys(cell.buffer()) : keys, "Inserted" );
+        update(operation, keys == null ? BFUtils.getIndexKeys(cell.buffer()) : keys, "Inserted");
     }
 
     /**
@@ -179,15 +179,15 @@ public class BloomingIndexer implements Indexer {
      * @param rows The collection of keys to insert.
      * @param op literal "Inserted" or "Deleted" for logging purposes
      */
-    private void update(Consumer<IndexKey> operation, ExtendedIterator<IndexKey> rows, String op ) {
+    private void update(Consumer<IndexKey> operation, ExtendedIterator<IndexKey> rows, String op) {
         CountingFilter<IndexKey> counting = null;
         if (logger.isDebugEnabled()) {
             counting = new CountingFilter<IndexKey>();
-            rows.filterKeep( counting );
+            rows.filterKeep(counting);
         }
-        rows.forEach( operation );
+        rows.forEach(operation);
         if (logger.isDebugEnabled()) {
-            logger.debug( "{} {} keys", op, counting.getCount());
+            logger.debug("{} {} keys", op, counting.getCount());
         }
     }
 
@@ -222,8 +222,9 @@ public class BloomingIndexer implements Indexer {
         try (ExtendedIterator<IndexKey> keyIter = BFUtils.getIndexKeys(oldBytes)) {
             if (keyIter.hasNext()) {
                 boolean doSingle = false;
-                try (UnfilteredRowIterator rowIter = serde.read( keyIter.next(), nowInSec, key, oldRowData.clustering())) {
-                    doSingle = ! rowIter.hasNext();
+                try (UnfilteredRowIterator rowIter = serde.read(keyIter.next(), nowInSec, key,
+                        oldRowData.clustering())) {
+                    doSingle = !rowIter.hasNext();
                 }
                 if (doSingle) {
                     insertRow(newRowData, BFUtils.getIndexKeys(newBytes));
@@ -243,9 +244,9 @@ public class BloomingIndexer implements Indexer {
             return;
         }
         /*
-         * Calculate a diff by comparing the bytes.  If a byte chagnes set a bit in the
-         * "changes" BitMap array.  Later use the changed bits to determine which IndexKeys
-         * to remove or add.
+         * Calculate a diff by comparing the bytes. If a byte chagnes set a bit in the
+         * "changes" BitMap array. Later use the changed bits to determine which
+         * IndexKeys to remove or add.
          */
         int limit = oldBytes.length > newBytes.length ? oldBytes.length : newBytes.length;
         int min = oldBytes.length > newBytes.length ? newBytes.length : oldBytes.length;
@@ -300,7 +301,7 @@ public class BloomingIndexer implements Indexer {
         Clustering<?> clustering = row.clustering();
         DeletionTime deletedAt = new DeletionTime(cell.timestamp(), nowInSec);
         Consumer<IndexKey> operation = (r) -> serde.delete(r, key, clustering, deletedAt, ctx);
-        update(operation, keys == null ? BFUtils.getIndexKeys(cell.buffer()) : keys, "Deleted" );
+        update(operation, keys == null ? BFUtils.getIndexKeys(cell.buffer()) : keys, "Deleted");
 
     }
 
