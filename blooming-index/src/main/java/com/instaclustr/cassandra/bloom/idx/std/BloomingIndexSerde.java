@@ -106,66 +106,24 @@ public class BloomingIndexSerde {
      * Calculates the estimated number of rows given the shape of the filters coming into
      * the index.
      *
-     * @param m The maximum number of bits in the bloom filter.
-     * @param k The number of hashing functions used for each item.
-     * @param n The expected number of items in each bloom filter.
+     * @param entriesPerRow The number of entries per row.
      * @return <ul>
-     * <li>  -1 : if m, k, or n <= 0.0 and there are items in the index.</li>
+     * <li>  -1 : if entriesPerRow is <= 0.0 and there are items in the index.</li>
      * <li>   0 : if there are no entries in the index</li>
      * <li>other: The estimated number of base table rows represented in the index.</li>
      * </ul>
      */
-    public long getEstimatedResultRows(double m, double k, double n) {
-        logger.debug("getEstimatedResultRows( {}, {}, {} )", m, k, n);
-        long buckets = indexCfs.estimateKeys();
-        if (buckets == 0) {
+    public long getEstimatedResultRows(double entriesPerRow) {
+        logger.debug("getEstimatedResultRows( {} )", entriesPerRow);
+        long entries = indexCfs.estimateKeys();
+        if (entries == 0) {
             logger.debug("getEstimatedResultRows - No data in index, returning 0");
             return 0;
         }
-        logger.debug("getEstimatedResultRows - buckets: {}", buckets);
-        if (m <= 0.0 || k <= 0.0 || n <= 0.0) {
-            logger.debug("getEstimatedResultRows - parameter less than 0, returning -1");
+        if (entriesPerRow <= 0.0) {
             return -1;
         }
-
-        // kn = number of bits requested from hasher
-        double kn = k * n;
-
-        // @formatter:off
-        //
-        // the probability of a collision whenselecting from a population of i
-        // in a range of [1; m] is:
-        //
-        //                        i
-        //                / m - 1 \
-        // q(i;m) =  1 - |  -----  |
-        //                \   m   /
-        //
-
-        // The probability that the ith integer randomly chosen from
-        // [1, m] will repeat a previous choice equals q(i − 1; m) so the
-        // total expected collisions in kn selections is
-        //
-        //      kn
-        //     =====                                    kn
-        //      \                               / m - 1 \
-        //       >    q(i - 1; m ) = kn - m + m|  ----- |
-        //      /                               \   m   /
-        //      =====
-        //      i = 1
-        //
-        // @formatter:on
-
-        double collisions = kn - m + m * Math.pow((m - 1) / m, kn);
-        // expected number of bits per entry
-        double bits = kn - collisions;
-        // number of byte sized buckets is number of bytes in the the container
-        double bucketsPerEntry = Math.min(bits, m / Byte.SIZE);
-        logger.debug("getEstimatedResultRows - bucketsPerEntry {}", bucketsPerEntry);
-
-        logger.debug("getEstimatedResultRows - returning Math.round( {} )", buckets / bucketsPerEntry);
-
-        return Math.round(buckets / bucketsPerEntry);
+        return Math.round(entries / entriesPerRow);
     }
 
     /**

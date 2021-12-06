@@ -41,37 +41,6 @@ public class BFUtils {
     private BFUtils() {
     }
 
-    /**
-     * A list of bytes to matching bytes in the bloom filter.
-     */
-    public static final int[][] byteTable;
-    /**
-     * the selectivity for each byte.
-     */
-    public static final int[] selectivityTable;
-
-    static {
-        // populate the byteTable annd selectivity tables.
-        int limit = (1 << Byte.SIZE);
-        byteTable = new int[limit][];
-        selectivityTable = new int[limit];
-        int[] buffer;
-        int count = 0;
-
-        for (int i = 1; i < limit; i++) {
-            count = 0;
-            buffer = new int[256];
-            for (int j = 1; j < limit; j++) {
-                if ((j & i) == i) {
-                    buffer[count++] = j;
-                    selectivityTable[j]++;
-                }
-            }
-            byteTable[i] = new int[count];
-            System.arraycopy(buffer, 0, byteTable[i], 0, count);
-        }
-
-    }
 
     /**
      * Extracts an array of bytes from the Bloom filter ByteBuffer.
@@ -161,30 +130,30 @@ v     */
         });
     }
 
-    static class IndexClusteringBuilder<T> implements Function<ByteBuffer, Clustering<?>> {
-        private final Clustering<T> clustering;
-        private final ClusteringComparator comparator;
-
-        public IndexClusteringBuilder(final Clustering<T> clustering, final ClusteringComparator comparator) {
-            this.clustering = clustering;
-            this.comparator = comparator;
-        }
-
-        @Override
-        public Clustering<?> apply(ByteBuffer rowKey) {
-            CBuilder builder = CBuilder.create(comparator);
-            builder.add(rowKey);
-            for (int i = 0; i < clustering.size(); i++)
-                builder.add(clustering.get(i), clustering.accessor());
-
-            // Note: if indexing a static column, prefix will be
-            // Clustering.STATIC_CLUSTERING
-            // so the Clustering obtained from builder::build will contain a value for only
-            // the partition key. At query time though, this is all that's needed as the
-            // entire
-            // base table partition should be returned for any mathching index entry.
-            return builder.build();
-        }
-
-    }
+//    static class IndexClusteringBuilder<T> implements Function<ByteBuffer, Clustering<?>> {
+//        private final Clustering<T> clustering;
+//        private final ClusteringComparator comparator;
+//
+//        public IndexClusteringBuilder(final Clustering<T> clustering, final ClusteringComparator comparator) {
+//            this.clustering = clustering;
+//            this.comparator = comparator;
+//        }
+//
+//        @Override
+//        public Clustering<?> apply(ByteBuffer rowKey) {
+//            CBuilder builder = CBuilder.create(comparator);
+//            builder.add(rowKey);
+//            for (int i = 0; i < clustering.size(); i++)
+//                builder.add(clustering.get(i), clustering.accessor());
+//
+//            // Note: if indexing a static column, prefix will be
+//            // Clustering.STATIC_CLUSTERING
+//            // so the Clustering obtained from builder::build will contain a value for only
+//            // the partition key. At query time though, this is all that's needed as the
+//            // entire
+//            // base table partition should be returned for any mathching index entry.
+//            return builder.build();
+//        }
+//
+//    }
 }

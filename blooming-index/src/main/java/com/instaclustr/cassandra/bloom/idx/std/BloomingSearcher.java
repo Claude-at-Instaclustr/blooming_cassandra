@@ -97,7 +97,7 @@ public class BloomingSearcher implements Searcher {
      * @param command The read command being executed.
      * @param expression The expression to use for the search.
      */
-    public BloomingSearcher(final int maxThreads, final ColumnMetadata indexedColumn, final ColumnFamilyStore baseCfs,
+    public BloomingSearcher(final ColumnMetadata indexedColumn, final ColumnFamilyStore baseCfs,
             final BloomingIndexSerde serde, final ReadCommand command, final RowFilter.Expression expression) {
         this.baseCfs = baseCfs;
         this.indexedColumn = indexedColumn;

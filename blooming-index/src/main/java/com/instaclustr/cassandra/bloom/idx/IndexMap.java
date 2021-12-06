@@ -36,17 +36,6 @@ public class IndexMap {
     private int[] codes;
 
     /**
-     * Creates an IndexMap from an IndexKey.
-     * <p>The map is constructed by
-     * retrieving the BFUtils.byteTable entries for {@code key.getCode()}.
-     * Resulting map has the same position as the original key.</p>
-     * @param key the Key to create the map from.
-     */
-    public IndexMap(IndexKey key) {
-        this(key.getPosition(), BFUtils.byteTable[key.getCode()]);
-    }
-
-    /**
      * Constructor.
      * @param position the byte position of the code in the bloom filter.
      * @param codes that match the code from the filter.

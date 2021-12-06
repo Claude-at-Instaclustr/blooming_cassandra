@@ -43,6 +43,7 @@ import org.apache.cassandra.db.filter.RowFilter;
 import org.apache.cassandra.db.lifecycle.SSTableSet;
 import org.apache.cassandra.db.lifecycle.View;
 import org.apache.cassandra.db.marshal.AbstractType;
+import org.apache.cassandra.db.marshal.BytesType;
 import org.apache.cassandra.db.partitions.PartitionIterator;
 import org.apache.cassandra.db.partitions.PartitionUpdate;
 import org.apache.cassandra.db.rows.Cell;
@@ -148,20 +149,13 @@ public class BloomingIndex implements Index {
      * The Serde to use to read/write the index table.
      */
     private BloomingIndexSerde serde;
-    /**
-     * The maximum number of bits in the Bloom filter (May be 0.0)
-     */
-    private final double m;
-    /**
-     * The maximum number of hash functions used for each item in the Bloom filter (May be 0.0)
-     */
-    private final double k;
-    /**
-     * The maximum number of items the Bloom filter (May be 0.0)
-     */
-    private final double n;
 
-    private final int maxThreads;
+
+    /**
+     * The estimated number of entries in the index table per row of the base table.
+     * may be 0.0;
+     */
+    private final double indexEntriesPerRow;
 
     /**
      * Constructor
@@ -184,11 +178,38 @@ public class BloomingIndex implements Index {
         }
 
         // parse ints but store as doubles.
-        m = parseInt(indexDef.options, "numberOfBits");
-        n = parseInt(indexDef.options, "numberOfItems");
-        k = parseInt(indexDef.options, "numberOfFunctions");
-        maxThreads = parseInt(indexDef.options, "maxThreads");
+        // The maximum number of bits in the Bloom filter (May be 0.0)
+
+        final double numberOfBits = parseInt(indexDef.options, "numberOfBits");
+
+        // The maximum number of hash functions used for each item in the Bloom filter (May be 0.0)
+        final double numberOfFunctions = parseInt(indexDef.options, "numberOfFunctions");
+
+        // The maximum number of items the Bloom filter (May be 0.0)
+        final double numberOfItems = parseInt(indexDef.options, "numberOfItems");
+
+        boolean calculateRatio = true;
+        // it at least one was specified
+        if (numberOfBits >= 0.0 || numberOfFunctions >= 0.0 || numberOfItems >= 0.0) {
+            // then if any is not specified or is zero.
+            if (numberOfBits <= 0.0) {
+                logger.warn("index created with numberOfBits ({}) <= zero", numberOfBits);
+                calculateRatio = false;
+            }
+            if (numberOfItems <= 0.0) {
+                logger.warn("index created with numberOfItems ({}) <= zero", numberOfItems);
+                calculateRatio = false;
+            }
+            if (numberOfFunctions <= 0.0) {
+                logger.warn("index created with numberOfFunctions ({}) <= zero", numberOfFunctions);
+                calculateRatio = false;
+            }
+        }
+
+        indexEntriesPerRow = calculateRatio ? calculateIndexPerRow( numberOfBits,numberOfItems,numberOfFunctions ) : 0.0;
+
     }
+
 
     /**
      * Parses integer values from a map of options.
@@ -204,6 +225,51 @@ public class BloomingIndex implements Index {
         } catch (NumberFormatException e) {
             throw new IllegalArgumentException(String.format("Value for option '%s' is not an integer", option), e);
         }
+    }
+
+    private static double calculateIndexPerRow( double m, double n, double k ) {
+
+
+        // kn = number of bits requested from hasher
+        double kn = k * n;
+
+        // @formatter:off
+        //
+        // the probability of a collision when selecting from a population of i
+        // in a range of [1; m] is:
+        //
+        //                        i
+        //                / m - 1 \
+        // q(i;m) =  1 - |  -----  |
+        //                \   m   /
+        //
+
+        // The probability that the ith integer randomly chosen from
+        // [1, m] will repeat a previous choice equals q(i − 1; m) so the
+        // total expected collisions in kn selections is
+        //
+        //      kn
+        //     =====                                    kn
+        //      \                               / m - 1 \
+        //       >    q(i - 1; m ) = kn - m + m|  ----- |
+        //      /                               \   m   /
+        //      =====
+        //      i = 1
+        //
+        // @formatter:on
+
+        double collisions = kn - m + m * Math.pow((m - 1) / m, kn);
+        // expected number of bits per entry
+        double bits = kn - collisions;
+        /*
+         * the number of index entries per row is the lesser of the number of bits or the number of
+         * bytes in the bloom filter.  The reasoning here is that the bits are evenly distributed
+         * across the bloom filter, so the probability of a bit being in the same byte as another bit
+         * reaches 1 when there are more bits than bytes.  Since we only record bytes in the index
+         * we need the minimum of the two values.
+         */
+        return Math.min(bits, m / Byte.SIZE);
+
     }
 
     @Override
@@ -320,12 +386,17 @@ public class BloomingIndex implements Index {
     }
 
     @Override
+    public boolean supportsReplicaFilteringProtection(RowFilter arg0) {
+        return false;
+    }
+
+    @Override
     public long getEstimatedResultRows() {
         logger.debug("getEstimatedResultRows");
         // If any of the parameters are not set and there is data in the index
         // then serde.getEstimatedResultRows() will return -1.
         // in this case we asume the index is used on all the rows in the base table.
-        long result = serde.getEstimatedResultRows(m, k, n);
+        long result = serde.getEstimatedResultRows( indexEntriesPerRow );
         result =  result == -1 ? baseCfs.estimateKeys() : result;
         logger.debug("getEstimatedResultRows returning {}", result);
         return result;
@@ -361,7 +432,7 @@ public class BloomingIndex implements Index {
         Optional<RowFilter.Expression> target = getTargetExpression(command.rowFilter().getExpressions());
 
         if (target.isPresent()) {
-            return new BloomingSearcher(maxThreads, indexedColumn, baseCfs, serde, command, target.get());
+            return new BloomingSearcher(indexedColumn, baseCfs, serde, command, target.get());
         }
 
         return null;

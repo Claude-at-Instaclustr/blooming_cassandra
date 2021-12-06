@@ -22,10 +22,43 @@ import com.instaclustr.cassandra.bloom.idx.std.BFUtils;
 /**
  * A Multidimensional Bloom filter entry key.
  * <p>Keys are naturally ordered by their selectivity
- * and position, with the highest selectivity first.
- * Hashcodes for the IndexKey are the selectivity values.</p>
+ * and position, with the highest selectivity first.</p>
  */
 public class IndexKey implements Comparable<IndexKey> {
+
+    /**
+     * A list of bytes to matching bytes in the bloom filter.
+     */
+    private static final int[][] byteTable;
+    /**
+     * the selectivity for each byte.
+     */
+    private static final int[] selectivityTable;
+
+    static {
+        // populate the byteTable annd selectivity tables.
+        int limit = (1 << Byte.SIZE);
+        byteTable = new int[limit][];
+        selectivityTable = new int[limit];
+        int[] buffer;
+        int count = 0;
+
+        for (int i = 1; i < limit; i++) {
+            count = 0;
+            buffer = new int[256];
+            for (int j = 1; j < limit; j++) {
+                if ((j & i) == i) {
+                    buffer[count++] = j;
+                    selectivityTable[j]++;
+                }
+            }
+            byteTable[i] = new int[count];
+            System.arraycopy(buffer, 0, byteTable[i], 0, count);
+        }
+
+    }
+
+
     /**
      * The byte position in the bloom filter for this code
      */
@@ -39,6 +72,8 @@ public class IndexKey implements Comparable<IndexKey> {
      * The number of bytes the data for the key uses.
      */
     public static final int BYTES = Integer.BYTES * 2;
+
+
 
     /**
      * Constructor.
@@ -73,12 +108,16 @@ public class IndexKey implements Comparable<IndexKey> {
 
     @Override
     public boolean equals(Object o) {
-        return o instanceof IndexKey ? compareTo((IndexKey) o) == 0 : false;
+        if (o instanceof IndexKey) {
+            IndexKey other = (IndexKey) o;
+            return code == other.getCode() && position == other.getPosition();
+        }
+        return false;
     }
 
     @Override
     public int hashCode() {
-        return BFUtils.selectivityTable[getCode()];
+        return getCode();
     }
 
     /**
@@ -99,7 +138,7 @@ public class IndexKey implements Comparable<IndexKey> {
      * @see IndexMap#IndexMap(IndexKey)
      */
     public IndexMap asMap() {
-        return new IndexMap(this);
+        return new IndexMap(getPosition(), byteTable[getCode()]);
     }
 
     /**
@@ -112,7 +151,7 @@ public class IndexKey implements Comparable<IndexKey> {
 
     @Override
     public int compareTo(IndexKey other) {
-        int i = Integer.compare(other.hashCode(), hashCode());
+        int i = Integer.compare(selectivityTable[other.getCode()], selectivityTable[getCode()]);
         return i == 0 ? Integer.compare(this.position, other.position) : i;
     }
 }
