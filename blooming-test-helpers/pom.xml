@@ -16,7 +16,7 @@
 	<groupId>com.instaclustr.cassandra</groupId>
 	<artifactId>blooming-test-helpers</artifactId>
 	<version>0.0.1-SNAPSHOT</version>
-	<name>Blooming-Cassandra-Test-Helpers</name>
+	<name>Blooming Cassandra - Test Helpers</name>
 	<description>Testing helper classes</description>
 	<dependencies>
 
@@ -46,6 +46,11 @@
 		<dependency>
 			<groupId>org.apache.commons</groupId>
 			<artifactId>commons-lang3</artifactId>
+		</dependency>
+		
+		<dependency>
+			<groupId>com.instaclustr.cassandra</groupId>
+			<artifactId>blooming-utils</artifactId>
 		</dependency>
 	</dependencies>
 	<build>

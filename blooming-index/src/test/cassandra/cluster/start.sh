@@ -14,4 +14,4 @@ do
 done
 
 ./setLogs.sh
-docker-compose logs -f
+

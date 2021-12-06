@@ -9,4 +9,5 @@ services:
       MIN_HEAP_SIZE: "128M"
       HEAP_NEWSIZE: "24M"
     volumes:
+      - ./cassandra.yaml:/etc/cassandra/cassandra.yaml
       - ./data:/var/lib/cassandra/data/

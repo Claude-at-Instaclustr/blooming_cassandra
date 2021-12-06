@@ -17,6 +17,17 @@ import com.instaclustr.geonames.GeoNameHasher;
 import com.instaclustr.geonames.GeoNameIterator;
 import com.instaclustr.geonames.GeoNameLoader;
 
+/**
+ * Demo class to create function and load data.
+ * 
+ * Requires a running cassandra instance on localhost.
+ * 
+ * Creates the geonames keyspace and geoname table within that keyspace before adding the BFContains function.
+ * Once the function is created, it loads the allCountries.txt file into the table. 
+ * 
+ * After demo runs queries may be executed using any query against the runnign Cassandra instance.
+ *
+ */
 public class Demo {
 
     private Cluster cluster;
@@ -54,7 +65,6 @@ public class Demo {
                 .addContactPoint( "localhost");
         cluster = builder.build();
         session = cluster.connect();
-
     }
 
     public void initTable() {
@@ -68,10 +78,6 @@ public class Demo {
         GeoNameLoader.load(iter, session);
     }
 
-    /*public ResultSet search( BloomFilter filter ) {
-        return session.execute( GeoName.CassandraSerde.query(filter) );
-    }
-*/
     public static void main(String[] args) throws IOException {
         Demo demo = new Demo();
             demo.initTable();

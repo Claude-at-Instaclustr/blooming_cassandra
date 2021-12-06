@@ -5,7 +5,15 @@
     <artifactId>blooming</artifactId>
     <version>0.0.1-SNAPSHOT</version>
   </parent>
-  <artifactId>blooming-table</artifactId>
+  <artifactId>blooming-utils</artifactId>
+  <name>Blooming Cassandra - Utilities</name>
+  <dependencies>
+  	<dependency>
+  		<groupId>org.slf4j</groupId>
+  		<artifactId>slf4j-api</artifactId>
+  		<version>1.7.25</version>
+  	</dependency>
+  </dependencies>
   <dependencyManagement>
   	<dependencies>
   		<dependency>
@@ -16,19 +24,4 @@
   		</dependency>
   	</dependencies>
   </dependencyManagement>
-  <dependencies>
-  	<dependency>
-  		<groupId>org.apache.cassandra</groupId>
-  		<artifactId>cassandra-all</artifactId>
-  	</dependency>
-  	<dependency>
-  		<groupId>org.apache.commons</groupId>
-  		<artifactId>commons-collections4</artifactId>
-  	</dependency>
-  	<dependency>
-  		<groupId>com.instaclustr.cassandra</groupId>
-  		<artifactId>blooming-test-helpers</artifactId>
-  	</dependency>
-  </dependencies>
-  <name>Blooming Cassandra - Table</name>
 </project>

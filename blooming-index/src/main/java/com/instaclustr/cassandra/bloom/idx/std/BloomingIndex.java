@@ -60,11 +60,11 @@ import org.apache.cassandra.schema.IndexMetadata;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.Pair;
 import org.apache.cassandra.utils.concurrent.Refs;
-import org.apache.jena.util.iterator.WrappedIterator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.google.common.collect.ImmutableSet;
+import com.instaclustr.iterator.util.WrappedIterator;
 
 /**
  * An index that implements a multidimensional Bloom filter index.
@@ -443,16 +443,19 @@ public class BloomingIndex implements Index {
         logger.debug("validate");
         assert !indexedColumn.isPrimaryKeyColumn();
 
-        WrappedIterator.create(update.iterator()).mapWith(r -> r.getCell(indexedColumn)).filterDrop(b -> b == null)
-        .mapWith(Cell::buffer).forEach(v -> {
-            if (v.remaining() >= FBUtilities.MAX_UNSIGNED_SHORT) {
-                throw new InvalidRequestException(String.format(
-                        "Cannot index value of size %d for index %s on %s(%s) (maximum allowed size=%d)",
-                        v.remaining(), metadata.name, baseCfs.metadata, indexedColumn.name.toString(),
-                        FBUtilities.MAX_UNSIGNED_SHORT));
-            }
-        });
-
+        try {
+            WrappedIterator.create(update.iterator()).mapWith(r -> r.getCell(indexedColumn)).filterDrop(b -> b == null)
+                    .mapWith(Cell::buffer).forEach(v -> {
+                        if (v.remaining() >= FBUtilities.MAX_UNSIGNED_SHORT) {
+                            throw new InvalidRequestException(String.format(
+                                    "Cannot index value of size %d for index %s on %s(%s) (maximum allowed size=%d)",
+                                    v.remaining(), metadata.name, baseCfs.metadata, indexedColumn.name.toString(),
+                                    FBUtilities.MAX_UNSIGNED_SHORT));
+                        }
+                    });
+        } catch (Exception e) {
+            throw new InvalidRequestException(e.getMessage(), e);
+        }
     }
 
     @Override

@@ -16,7 +16,7 @@
 	<groupId>com.instaclustr.cassandra</groupId>
 	<artifactId>blooming</artifactId>
 	<version>0.0.1-SNAPSHOT</version>
-	<name>Blooming-Cassandra</name>
+	<name>Blooming Cassandra</name>
 	<build>
 		<plugins>
 			<plugin>
@@ -105,6 +105,11 @@
 		<dependencies>
 			<dependency>
 				<groupId>com.instaclustr.cassandra</groupId>
+				<artifactId>blooming-utils</artifactId>
+				<version>${project.version}</version>
+			</dependency>
+			<dependency>	
+				<groupId>com.instaclustr.cassandra</groupId>
 				<artifactId>blooming-test-helpers</artifactId>
 				<version>${project.version}</version>
 			</dependency>
@@ -138,6 +143,11 @@
 				<artifactId>commons-lang3</artifactId>
 				<version>3.11</version>
 			</dependency>
+			<dependency>
+				<groupId>slf4j.org</groupId>
+				<artifactId>slf4j-api</artifactId>
+				<version>1.7.25</version>
+			</dependency>
 		</dependencies>
 	</dependencyManagement>
 	<properties>
@@ -163,6 +173,7 @@
 		<module>blooming-test-helpers</module>
 		<module>blooming-index</module>
 		<module>blooming-table</module>
+		<module>blooming-utils</module>
 	</modules>
 	<description>Bringing Bloom filters to Cassandra User interface.</description>
 </project>

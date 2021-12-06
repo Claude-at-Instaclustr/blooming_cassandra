@@ -40,12 +40,12 @@ import org.apache.cassandra.index.Index.Searcher;
 import org.apache.cassandra.schema.ColumnMetadata;
 import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.utils.ByteBufferUtil;
-import org.apache.jena.util.iterator.ExtendedIterator;
-import org.apache.jena.util.iterator.WrappedIterator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.instaclustr.cassandra.bloom.idx.IndexKey;
+import com.instaclustr.iterator.util.ExtendedIterator;
+import com.instaclustr.iterator.util.WrappedIterator;
 
 /**
  * Handles searching the index for mathing filters.

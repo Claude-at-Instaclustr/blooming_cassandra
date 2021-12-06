@@ -35,13 +35,13 @@ import org.apache.cassandra.db.rows.UnfilteredRowIterator;
 import org.apache.cassandra.index.Index.Indexer;
 import org.apache.cassandra.schema.ColumnMetadata;
 import org.apache.cassandra.schema.TableMetadata;
-import org.apache.jena.util.iterator.ExtendedIterator;
-import org.apache.jena.util.iterator.WrappedIterator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.instaclustr.cassandra.bloom.idx.CountingFilter;
 import com.instaclustr.cassandra.bloom.idx.IndexKey;
+import com.instaclustr.iterator.util.ExtendedIterator;
+import com.instaclustr.iterator.util.WrappedIterator;
 
 /**
  * Performs the index updating for inserting or removing a single row from the base table.
@@ -178,6 +178,7 @@ public class BloomingIndexer implements Indexer {
      * @param operation An IndexKey consumer that calls serde to perform the operation.
      * @param rows The collection of keys to insert.
      * @param op literal "Inserted" or "Deleted" for logging purposes
+     * @throws Exception
      */
     private void update(Consumer<IndexKey> operation, ExtendedIterator<IndexKey> rows, String op) {
         CountingFilter<IndexKey> counting = null;
@@ -185,10 +186,13 @@ public class BloomingIndexer implements Indexer {
             counting = new CountingFilter<IndexKey>();
             rows.filterKeep(counting);
         }
+
         rows.forEach(operation);
+
         if (logger.isDebugEnabled()) {
             logger.debug("{} {} keys", op, counting.getCount());
         }
+
     }
 
     /**

@@ -16,7 +16,7 @@
 	<groupId>com.instaclustr.cassandra</groupId>
 	<artifactId>blooming-UDF</artifactId>
 	<version>0.0.1-SNAPSHOT</version>
-	<name>Blooming-Cassandra-UDF</name>
+	<name>Blooming Cassandra - UDF</name>
 	<build>
 		<plugins>
 			<plugin>

@@ -21,10 +21,10 @@ import java.nio.LongBuffer;
 import java.util.Iterator;
 import java.util.NoSuchElementException;
 import org.apache.cassandra.db.Clustering;
-import org.apache.jena.util.iterator.ExtendedIterator;
-import org.apache.jena.util.iterator.WrappedIterator;
 
 import com.instaclustr.cassandra.bloom.idx.IndexKey;
+import com.instaclustr.iterator.util.ExtendedIterator;
+import com.instaclustr.iterator.util.WrappedIterator;
 
 /**
  * Utilities for Bloom filter manipulation.
@@ -53,7 +53,7 @@ public class BFUtils {
             for (int i = 0; i < Long.BYTES; i++) {
                 byte code = (byte) (word & 0xFF);
                 word = word >> Byte.SIZE;
-            codes[pos++] = code;
+                codes[pos++] = code;
             }
         }
         return codes;
@@ -126,30 +126,33 @@ public class BFUtils {
         });
     }
 
-    //    static class IndexClusteringBuilder<T> implements Function<ByteBuffer, Clustering<?>> {
-    //        private final Clustering<T> clustering;
-    //        private final ClusteringComparator comparator;
+    // static class IndexClusteringBuilder<T> implements Function<ByteBuffer,
+    // Clustering<?>> {
+    // private final Clustering<T> clustering;
+    // private final ClusteringComparator comparator;
     //
-    //        public IndexClusteringBuilder(final Clustering<T> clustering, final ClusteringComparator comparator) {
-    //            this.clustering = clustering;
-    //            this.comparator = comparator;
-    //        }
+    // public IndexClusteringBuilder(final Clustering<T> clustering, final
+    // ClusteringComparator comparator) {
+    // this.clustering = clustering;
+    // this.comparator = comparator;
+    // }
     //
-    //        @Override
-    //        public Clustering<?> apply(ByteBuffer rowKey) {
-    //            CBuilder builder = CBuilder.create(comparator);
-    //            builder.add(rowKey);
-    //            for (int i = 0; i < clustering.size(); i++)
-    //                builder.add(clustering.get(i), clustering.accessor());
+    // @Override
+    // public Clustering<?> apply(ByteBuffer rowKey) {
+    // CBuilder builder = CBuilder.create(comparator);
+    // builder.add(rowKey);
+    // for (int i = 0; i < clustering.size(); i++)
+    // builder.add(clustering.get(i), clustering.accessor());
     //
-    //            // Note: if indexing a static column, prefix will be
-    //            // Clustering.STATIC_CLUSTERING
-    //            // so the Clustering obtained from builder::build will contain a value for only
-    //            // the partition key. At query time though, this is all that's needed as the
-    //            // entire
-    //            // base table partition should be returned for any mathching index entry.
-    //            return builder.build();
-    //        }
+    // // Note: if indexing a static column, prefix will be
+    // // Clustering.STATIC_CLUSTERING
+    // // so the Clustering obtained from builder::build will contain a value for
+    // only
+    // // the partition key. At query time though, this is all that's needed as the
+    // // entire
+    // // base table partition should be returned for any mathching index entry.
+    // return builder.build();
+    // }
     //
-    //    }
+    // }
 }

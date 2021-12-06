@@ -16,10 +16,15 @@
 	<groupId>com.instaclustr.cassandra</groupId>
 	<artifactId>blooming-index</artifactId>
 	<version>0.0.1-SNAPSHOT</version>
-	<name>Blooming-Cassandra-Index</name>
+	<name>Blooming Cassandra - Index</name>
 	<description>Implementation of a Bloom filter indexing in Cassandra </description>
 	<dependencies>
 
+		<dependency>
+			<groupId>com.instaclustr.cassandra</groupId>
+			<artifactId>blooming-utils</artifactId>
+		</dependency>
+		
 		<dependency>
 			<groupId>com.instaclustr.cassandra</groupId>
 			<artifactId>blooming-test-helpers</artifactId>

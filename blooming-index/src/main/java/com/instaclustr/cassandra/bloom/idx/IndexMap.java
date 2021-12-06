@@ -18,8 +18,9 @@ package com.instaclustr.cassandra.bloom.idx;
 
 import java.util.Iterator;
 import java.util.NoSuchElementException;
-import org.apache.jena.util.iterator.ExtendedIterator;
-import org.apache.jena.util.iterator.WrappedIterator;
+
+import com.instaclustr.iterator.util.ExtendedIterator;
+import com.instaclustr.iterator.util.WrappedIterator;
 
 /**
  * A Multidimensional Bloom filter entry map.
