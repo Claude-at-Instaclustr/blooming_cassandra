@@ -6,6 +6,7 @@ services:
       - "9042:9042"
     volumes:
       - ./data:/var/lib/cassandra/data/
+      - ./logs:/opt/cassandra/logs/
     environment:
       MAX_HEAP_SIZE: "128M"
       MIN_HEAP_SIZE: "128M"

@@ -94,6 +94,11 @@
 					<version>3.2.0</version>
 				</plugin>
 				<plugin>
+					<groupId>org.apache.maven.plugins</groupId>
+					<artifactId>maven-dependency-plugin</artifactId>
+					<version>3.2.0</version>
+				</plugin>
+				<plugin>
 					<groupId>io.fabric8</groupId>
 					<artifactId>docker-maven-plugin</artifactId>
 					<version>0.38.0</version>
@@ -108,7 +113,7 @@
 				<artifactId>blooming-utils</artifactId>
 				<version>${project.version}</version>
 			</dependency>
-			<dependency>	
+			<dependency>
 				<groupId>com.instaclustr.cassandra</groupId>
 				<artifactId>blooming-test-helpers</artifactId>
 				<version>${project.version}</version>
