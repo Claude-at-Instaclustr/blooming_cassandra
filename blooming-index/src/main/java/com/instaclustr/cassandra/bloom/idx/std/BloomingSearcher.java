@@ -18,7 +18,6 @@ package com.instaclustr.cassandra.bloom.idx.std;
 
 import java.nio.ByteBuffer;
 import java.nio.charset.CharacterCodingException;
-import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.SortedSet;
@@ -87,20 +86,28 @@ public class BloomingSearcher implements Searcher {
     final Function<Row, DecoratedKey> row2Key;
 
     /**
+     * If {@code true} A bloom filter will be used to filter out non-matchinging keys early in the process.
+     */
+    final boolean usePrimaryFilter;
+
+    /**
      * Constructor.
+     * @param usePrimaryFilter Use a bloom filter to filter out non matching rows in the later stages of the processing.
      * @param indexedColumn the indexed column in the base table.
      * @param baseCfs the base table.
      * @param serde The Serde for index I/O.
      * @param command The read command being executed.
      * @param expression The expression to use for the search.
      */
-    public BloomingSearcher(final ColumnMetadata indexedColumn, final ColumnFamilyStore baseCfs,
-            final BloomingIndexSerde serde, final ReadCommand command, final RowFilter.Expression expression) {
+    public BloomingSearcher(final boolean usePrimaryFilter, final ColumnMetadata indexedColumn,
+            final ColumnFamilyStore baseCfs, final BloomingIndexSerde serde, final ReadCommand command,
+            final RowFilter.Expression expression) {
         this.baseCfs = baseCfs;
         this.indexedColumn = indexedColumn;
         this.serde = serde;
         this.command = command;
         this.expression = expression;
+        this.usePrimaryFilter = usePrimaryFilter;
 
         // A function to convert a serde row to the base key
         this.row2Key = new Function<Row, DecoratedKey>() {
@@ -208,7 +215,8 @@ public class BloomingSearcher implements Searcher {
                                 nowInSec);
                     }).forEach(rowIter -> {
                         // we use foreach here so that the row iterator will get closed.
-                        WrappedIterator.create(rowIter).mapWith(row2Key).filterKeep( searchMergeFilter ).forEach(mapSet::add);
+                        WrappedIterator.create(rowIter).mapWith(row2Key).filterKeep(searchMergeFilter)
+                        .forEach(mapSet::add);
                     });
                     logger.debug("Completed Returning {} entries", mapSet.size());
                     return mapSet;
@@ -222,12 +230,10 @@ public class BloomingSearcher implements Searcher {
         SortedSet<DecoratedKey> result = new TreeSet<DecoratedKey>();
         if (maps.hasNext()) {
             result.addAll(maps.next());
-            searchMergeFilter.rebuildFilter( result  );
+            searchMergeFilter.rebuildFilter(result);
             while (maps.hasNext() && !result.isEmpty()) {
                 result.retainAll(maps.next());
-                if (result.size() > 0  && searchMergeFilter.getLastN()/result.size() >= 10) {
-                    searchMergeFilter.rebuildFilter(result);
-                }
+                searchMergeFilter.rebuildFilter(result);
                 logger.debug("Merge yielded {} entries", result.size());
             }
         }
@@ -283,7 +289,6 @@ public class BloomingSearcher implements Searcher {
                     logger.debug("row {} empty? {}", ByteBufferUtil.string(last.partitionKey().getKey()),
                             last.isEmpty());
                 } catch (CharacterCodingException e) {
-                    // TODO Auto-generated catch block
                     logger.debug("row {} empty? {}", last.partitionKey(), last.isEmpty());
                 }
                 return last;
@@ -304,46 +309,58 @@ public class BloomingSearcher implements Searcher {
         };
     }
 
+    /**
+     * Class to Assist in the processing of candidate Decoratedkeys.  When the primary filter is in use
+     * (@code usePrimaryFilter=true} an instance of this class will filter out non-matching keys.
+     * When the number of keys in the set of selected keys drops significantly (a factor of 10) the
+     * filter is updated.  if (@code usePrimaryFilter=false} this filter will always return true.
+     */
     private class SearchMergeFilter implements Predicate<DecoratedKey> {
-        private int lastN = 0;
+        private int lastN = Integer.MAX_VALUE;
         private BloomFilter bf = null;
-
-
 
         @Override
         public boolean test(DecoratedKey key) {
-            if (bf == null) {
-                return true;
-            }
-
-            long[] buff = new long[2];
-            key.filterHash(buff);
-
-            Hasher hasher = new SimpleHasher( buff[0], buff[1] );
-            if (bf.contains( hasher )) {
+            if ((bf == null) || bf.contains(getHasher(key))) {
                 return true;
             }
             return false;
         }
 
-        public void rebuildFilter( Set<DecoratedKey> keys ) {
-            logger.debug( "Rebuilding gatekeeper for {} keys", keys.size());
-            // below 12 the bloom filter falls below 8B in size so just keep it.
-            if (lastN <=12 || keys.size() <= 1) {
-                return;
-            }
-            Shape shape = Shape.Factory.fromNP( keys.size(), 1.0/keys.size());
-            bf = new SimpleBloomFilter( shape );
-            for (DecoratedKey key : keys) {
-                bf.mergeInPlace( new SimpleHasher( ByteBufferUtil.getArray( key.getKey() )) );
-            }
-            lastN = keys.size();
+        /**
+         * Create a hasher from a decorated key.
+         * @param key
+         * @return
+         */
+        private Hasher getHasher(DecoratedKey key) {
+            long[] buff = new long[2];
+            key.filterHash(buff);
+            return new SimpleHasher(buff[0], buff[1]);
         }
 
-        public int getLastN() {
-            return lastN;
+        /**
+         * Rebuilds the filter.  Will not rebuild if:
+         * <ul>
+         * <li> We are not using a primary filter.</lli>
+         * <li>There is only one or zero keys (calculations fail)</li>
+         * <li>The last time we calculated there were fewer than 12 keys, bloom filter size falls below 8 bytes in size so just keep it.</li>
+         * <li>We have not seen the population drop by a factor of 10.</li>
+         * </ul>
+         * @param keys The found keys after the latest intersection processing.
+         */
+        public void rebuildFilter(Set<DecoratedKey> keys) {
+            if (usePrimaryFilter && keys.size() > 1 && lastN > 12 && lastN / keys.size() >= 10) {
+                logger.debug("Rebuilding gatekeeper for {} keys", keys.size());
+                if (lastN <= 12 || keys.size() <= 1) {
+                    return;
+                }
+                Shape shape = Shape.Factory.fromNP(keys.size(), 1.0 / keys.size());
+                bf = new SimpleBloomFilter(shape);
+                for (DecoratedKey key : keys) {
+                    bf.mergeInPlace(getHasher(key));
+                }
+                lastN = keys.size();
+            }
         }
-
-
     }
 }

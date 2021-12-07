@@ -125,6 +125,11 @@ import com.instaclustr.iterator.util.WrappedIterator;
  * The average number of items in each Bloom filter added to the index.  Often
  * called {@code n} when describing Bloom filters.
  * </dd>
+ * <dt>usePrimaryFilter</dt>
+ * <dd>
+ * If {@code true} then when retrieving baseTable keys use a Bloom filter to filter out non-matching keys.  This trades smaller
+ * memory requirement for slower speed.
+ * </dd>
  * </dl>
  *
  */
@@ -154,6 +159,8 @@ public class BloomingIndex implements Index {
      * may be 0.0;
      */
     private final double indexEntriesPerRow;
+
+    private final boolean usePrimaryFilter;
 
     /**
      * Constructor
@@ -207,7 +214,7 @@ public class BloomingIndex implements Index {
 
         indexEntriesPerRow = calculateRatio ? calculateIndexPerRow(numberOfBits, numberOfItems, numberOfFunctions)
                 : 0.0;
-
+        usePrimaryFilter = toBoolean( indexDef.options.get("usePrimaryFilter"), false );
     }
 
     /**
@@ -241,7 +248,7 @@ public class BloomingIndex implements Index {
         // q(i;m) =  1 - |  -----  |
         //                \   m   /
         //
-
+        //
         // The probability that the ith integer randomly chosen from
         // [1, m] will repeat a previous choice equals q(i − 1; m) so the
         // total expected collisions in kn selections is
@@ -255,7 +262,6 @@ public class BloomingIndex implements Index {
         //      i = 1
         //
         // @formatter:on
-
         double collisions = kn - m + m * Math.pow((m - 1) / m, kn);
         // expected number of bits per entry
         double bits = kn - collisions;
@@ -392,9 +398,9 @@ public class BloomingIndex implements Index {
     @Override
     public long getEstimatedResultRows() {
         logger.debug("getEstimatedResultRows");
-        logger.debug( "baseCfs estimateKeys {}", baseCfs.estimateKeys());
-        logger.debug( "baseCfs getMeanPartitionSize {}", baseCfs.getMeanPartitionSize());
-        logger.debug( "baseCfs getMeanRowCount {}", baseCfs.getMeanRowCount());
+        logger.debug("baseCfs estimateKeys {}", baseCfs.estimateKeys());
+        logger.debug("baseCfs getMeanPartitionSize {}", baseCfs.getMeanPartitionSize());
+        logger.debug("baseCfs getMeanRowCount {}", baseCfs.getMeanRowCount());
 
         // If any of the parameters are not set and there is data in the index
         // then serde.getEstimatedResultRows() will return -1.
@@ -435,7 +441,7 @@ public class BloomingIndex implements Index {
         Optional<RowFilter.Expression> target = getTargetExpression(command.rowFilter().getExpressions());
 
         if (target.isPresent()) {
-            return new BloomingSearcher(indexedColumn, baseCfs, serde, command, target.get());
+            return new BloomingSearcher(usePrimaryFilter, indexedColumn, baseCfs, serde, command, target.get());
         }
 
         return null;
@@ -523,5 +529,99 @@ public class BloomingIndex implements Index {
     private static String getSSTableNames(Collection<SSTableReader> sstables) {
         return StreamSupport.stream(sstables.spliterator(), false).map(SSTableReader::toString)
                 .collect(Collectors.joining(", "));
+    }
+
+    private static final String TRUE = "true";
+
+    private static boolean toBoolean(final String str, boolean dflt) {
+        // Previously used equalsIgnoreCase, which was fast for interned 'true'.
+        // Non interned 'true' matched 15 times slower.
+        //
+        // Optimisation provides same performance as before for interned 'true'.
+        // Similar performance for null, 'false', and other strings not length 2/3/4.
+        // 'true'/'TRUE' match 4 times slower, 'tRUE'/'True' 7 times slower.
+        if (str == TRUE) {
+            return true;
+        }
+        if (str == null) {
+            return dflt;
+        }
+        switch (str.length()) {
+            case 1: {
+                final char ch0 = str.charAt(0);
+                if (ch0 == 'y' || ch0 == 'Y' ||
+                    ch0 == 't' || ch0 == 'T' ||
+                    ch0 == '1') {
+                    return true;
+                }
+                if (ch0 == 'n' || ch0 == 'N' ||
+                    ch0 == 'f' || ch0 == 'F' ||
+                    ch0 == '0') {
+                    return false;
+                }
+                break;
+            }
+            case 2: {
+                final char ch0 = str.charAt(0);
+                final char ch1 = str.charAt(1);
+                if ((ch0 == 'o' || ch0 == 'O') &&
+                    (ch1 == 'n' || ch1 == 'N') ) {
+                    return true;
+                }
+                if ((ch0 == 'n' || ch0 == 'N') &&
+                    (ch1 == 'o' || ch1 == 'O') ) {
+                    return false;
+                }
+                break;
+            }
+            case 3: {
+                final char ch0 = str.charAt(0);
+                final char ch1 = str.charAt(1);
+                final char ch2 = str.charAt(2);
+                if ((ch0 == 'y' || ch0 == 'Y') &&
+                    (ch1 == 'e' || ch1 == 'E') &&
+                    (ch2 == 's' || ch2 == 'S') ) {
+                    return true;
+                }
+                if ((ch0 == 'o' || ch0 == 'O') &&
+                    (ch1 == 'f' || ch1 == 'F') &&
+                    (ch2 == 'f' || ch2 == 'F') ) {
+                    return false;
+                }
+                break;
+            }
+            case 4: {
+                final char ch0 = str.charAt(0);
+                final char ch1 = str.charAt(1);
+                final char ch2 = str.charAt(2);
+                final char ch3 = str.charAt(3);
+                if ((ch0 == 't' || ch0 == 'T') &&
+                    (ch1 == 'r' || ch1 == 'R') &&
+                    (ch2 == 'u' || ch2 == 'U') &&
+                    (ch3 == 'e' || ch3 == 'E') ) {
+                    return true;
+                }
+                break;
+            }
+            case 5: {
+                final char ch0 = str.charAt(0);
+                final char ch1 = str.charAt(1);
+                final char ch2 = str.charAt(2);
+                final char ch3 = str.charAt(3);
+                final char ch4 = str.charAt(4);
+                if ((ch0 == 'f' || ch0 == 'F') &&
+                    (ch1 == 'a' || ch1 == 'A') &&
+                    (ch2 == 'l' || ch2 == 'L') &&
+                    (ch3 == 's' || ch3 == 'S') &&
+                    (ch4 == 'e' || ch4 == 'E') ) {
+                    return false;
+                }
+                break;
+            }
+        default:
+            break;
+        }
+
+        return dflt;
     }
 }
