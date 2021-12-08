@@ -21,10 +21,17 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.net.URL;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.Executors;
 import java.util.function.Predicate;
 
+import org.apache.commons.cli.CommandLine;
+import org.apache.commons.cli.CommandLineParser;
+import org.apache.commons.cli.DefaultParser;
+import org.apache.commons.cli.HelpFormatter;
+import org.apache.commons.cli.Option;
+import org.apache.commons.cli.Options;
 import org.apache.commons.collections4.bloomfilter.BloomFilter;
 import org.apache.commons.collections4.bloomfilter.SimpleBloomFilter;
 import org.apache.commons.collections4.bloomfilter.hasher.HasherCollection;
@@ -70,8 +77,7 @@ public class Demo implements AutoCloseable {
     /**
      * Constructor.
      */
-    public Demo() {
-        Cluster.Builder builder = Cluster.builder().addContactPoint("localhost");
+    public Demo(Cluster.Builder builder) {
         cluster = builder.build();
         session = cluster.connect();
     }
@@ -123,11 +129,15 @@ public class Demo implements AutoCloseable {
      * Loads Geoname data from the URL.  The URL is assumed to point to an `allCountries` formatted file.
      * See Geonames in blooming-test-helpers for info.
      * @param url the ULR to the file.
+     * @param limit the maximum number of records to load (0=all)
      * @throws IOException on I/O error.
      */
-    public void load(URL url) throws IOException {
+    public void load(URL url, int limit) throws IOException {
         BulkExecutor bulkExecutor = new BulkExecutor(session, Executors.newFixedThreadPool(2), 2);
         try (GeoNameIterator geoNameIterator = new GeoNameIterator(url)) {
+            if (limit > 0) {
+                geoNameIterator.setLimit(limit);
+            }
             // ExtendedIterator<GeoName> iter =
             // WrappedIterator.create(geoNameIterator).filterKeep( new Throttle( 500,
             // 1000));
@@ -149,20 +159,78 @@ public class Demo implements AutoCloseable {
         return result;
     }
 
+    public static Options getOptions() {
+        Options options = new Options();
+        options.addOption("h", "help", false, "This help");
+        options.addOption("c", "create", false, "create the table and index.  Will not overwrite existing");
+        options.addOption("l", "load", false, "load the data");
+        options.addOption("n", "load-limit", true, "Limit the number of records loaded (only valid with -l)");
+
+        options.addOption("s", "server", true, "The server to initiate connection with. "
+                + "May occure more than once.  If not specified localhost is used.");
+        options.addOption("u", "user", true, "User id");
+        options.addOption("p", "password", true, "Password. (Required if user is provided");
+
+        return options;
+    }
+
     /**
      * Main entry point.
-     * <p>If a single argument is passed (anything) the tables will be created</p>
+     * <p> use {@code -h} for help
      * @param args the arguments.
      * @throws IOException on I/O error
      * @throws InterruptedException on thread interuption.
      */
     public static void main(String[] args) throws IOException, InterruptedException {
-        try (Demo demo = new Demo()) {
 
-            System.out.println("args: " + args.length);
-            if (args.length == 1) {
+        CommandLineParser parser = new DefaultParser();
+        CommandLine cmd = null;
+        try {
+            cmd = parser.parse(getOptions(), args);
+        } catch (Exception e) {
+            HelpFormatter formatter = new HelpFormatter();
+            formatter.printHelp("Demo", "", getOptions(), e.getMessage());
+            System.exit(1);
+        }
+
+        if (cmd.hasOption("h")) {
+            HelpFormatter formatter = new HelpFormatter();
+            formatter.printHelp("Demo", "", getOptions(), "");
+        }
+
+        Cluster.Builder builder = Cluster.builder();
+
+        if (cmd.hasOption("s")) {
+            for (String srv : cmd.getOptionValues("s")) {
+                builder.addContactPoint( srv );
+            }
+        } else {
+            builder.addContactPoint("localhost");
+        }
+
+        if (cmd.hasOption("u")) {
+            if (cmd.hasOption("p")) {
+                builder.withCredentials(cmd.getOptionValue("u"), cmd.getOptionValue('p'));
+            } else {
+                throw new IllegalArgumentException( "Password (-p) must be provided with user.");
+            }
+        }
+
+        try (Demo demo = new Demo( builder )) {
+
+            if (cmd.hasOption( "c")) {
                 demo.initTable();
-                demo.load(GeoNameIterator.DEFAULT_INPUT);
+            }
+            if (cmd.hasOption( "l")) {
+                int limit = 0;
+                if (cmd.hasOption('n')) {
+                    try {
+                        limit = Integer.parseInt(cmd.getOptionValue('n'));
+                    } catch (NumberFormatException e) {
+                        throw new IllegalArgumentException( String.format("load-limit (-n) must be a number.  '%s' provided", cmd.getOptionValue('n')) );
+                    }
+                }
+                demo.load(GeoNameIterator.DEFAULT_INPUT, limit );
             }
 
             try (BufferedReader reader = new BufferedReader(new InputStreamReader(System.in))) {
