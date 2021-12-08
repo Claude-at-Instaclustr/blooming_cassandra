@@ -128,17 +128,15 @@ public class Demo implements AutoCloseable {
      * See Geonames in blooming-test-helpers for info.
      * @param url the ULR to the file.
      * @param limit the maximum number of records to load (0=all)
+     * @param threads the maximum number of threads to use.
      * @throws IOException on I/O error.
      */
-    public void load(URL url, int limit) throws IOException {
-        BulkExecutor bulkExecutor = new BulkExecutor(session, Executors.newFixedThreadPool(2), 2);
+    public void load(URL url, int limit, int threads) throws IOException {
+        BulkExecutor bulkExecutor = new BulkExecutor(session, Executors.newFixedThreadPool(threads), threads*50);
         try (GeoNameIterator geoNameIterator = new GeoNameIterator(url)) {
             if (limit > 0) {
                 geoNameIterator.setLimit(limit);
             }
-            // ExtendedIterator<GeoName> iter =
-            // WrappedIterator.create(geoNameIterator).filterKeep( new Throttle( 500,
-            // 1000));
             GeoNameLoader.load(geoNameIterator, bulkExecutor, tableName);
         }
     }
@@ -163,7 +161,7 @@ public class Demo implements AutoCloseable {
         options.addOption("c", "create", false, "create the table and index.  Will not overwrite existing");
         options.addOption("l", "load", false, "load the data");
         options.addOption("n", "load-limit", true, "Limit the number of records loaded (only valid with -l)");
-
+        options.addOption("t", "load-threads", true, "The maximum number of threads to load data with");
         options.addOption("s", "server", true, "The server to initiate connection with. "
                 + "May occure more than once.  If not specified localhost is used.");
         options.addOption("u", "user", true, "User id");
@@ -229,7 +227,16 @@ public class Demo implements AutoCloseable {
                                 .format("load-limit (-n) must be a number.  '%s' provided", cmd.getOptionValue('n')));
                     }
                 }
-                demo.load(GeoNameIterator.DEFAULT_INPUT, limit);
+                int threads = 2;
+                if (cmd.hasOption('t')) {
+                    try {
+                        threads = Integer.parseInt(cmd.getOptionValue('t'));
+                    } catch (NumberFormatException e) {
+                        throw new IllegalArgumentException(String
+                                .format("load-threads (-t) must be a number.  '%s' provided", cmd.getOptionValue('t')));
+                    }
+                }
+                demo.load(GeoNameIterator.DEFAULT_INPUT, limit, threads);
             }
 
             try (BufferedReader reader = new BufferedReader(new InputStreamReader(System.in))) {

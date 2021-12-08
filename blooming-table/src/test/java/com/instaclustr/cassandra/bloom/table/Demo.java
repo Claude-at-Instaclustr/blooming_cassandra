@@ -107,7 +107,7 @@ public class Demo {
      * @throws IOException on I/O error.
      */
     public void load( URL url ) throws IOException {
-        BulkExecutor bulkExecutor = new BulkExecutor( session, Executors.newCachedThreadPool() );
+        BulkExecutor bulkExecutor = new BulkExecutor( session, Executors.newCachedThreadPool(), 100 );
         GeoNameIterator iter = new GeoNameIterator(url);
         GeoNameLoader.load(iter, bulkExecutor, "geoNames.geoname",  gn -> idxTable.insert( gn.filter, gn.geonameid));
     }
