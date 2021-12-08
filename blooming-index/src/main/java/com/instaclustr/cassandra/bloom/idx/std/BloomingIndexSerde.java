@@ -170,7 +170,7 @@ public class BloomingIndexSerde {
      * @param clustering the clustering from the row in the base table being indexed.
      * @return a clustering to be inserted into the index table.
      */
-    private <T> Clustering<?> buildIndexClustering(DecoratedKey rowKey, Clustering<T> clustering) {
+    public <T> Clustering<?> buildIndexClustering(DecoratedKey rowKey, Clustering<T> clustering) {
         CBuilder builder = CBuilder.create(getIndexComparator());
         builder.add(rowKey.getKey());
         for (int i = 0; i < clustering.size(); i++)
