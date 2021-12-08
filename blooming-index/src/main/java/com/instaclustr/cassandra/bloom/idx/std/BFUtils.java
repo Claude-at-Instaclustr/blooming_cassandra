@@ -53,7 +53,7 @@ public class BFUtils {
             for (int i = 0; i < Long.BYTES; i++) {
                 byte code = (byte) (word & 0xFF);
                 word = word >> Byte.SIZE;
-                codes[pos++] = code;
+            codes[pos++] = code;
             }
         }
         return codes;

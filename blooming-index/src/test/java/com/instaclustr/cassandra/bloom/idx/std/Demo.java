@@ -21,7 +21,6 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.net.URL;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.Executors;
 import java.util.function.Predicate;
@@ -30,7 +29,6 @@ import org.apache.commons.cli.CommandLine;
 import org.apache.commons.cli.CommandLineParser;
 import org.apache.commons.cli.DefaultParser;
 import org.apache.commons.cli.HelpFormatter;
-import org.apache.commons.cli.Option;
 import org.apache.commons.cli.Options;
 import org.apache.commons.collections4.bloomfilter.BloomFilter;
 import org.apache.commons.collections4.bloomfilter.SimpleBloomFilter;
@@ -202,7 +200,7 @@ public class Demo implements AutoCloseable {
 
         if (cmd.hasOption("s")) {
             for (String srv : cmd.getOptionValues("s")) {
-                builder.addContactPoint( srv );
+                builder.addContactPoint(srv);
             }
         } else {
             builder.addContactPoint("localhost");
@@ -212,25 +210,26 @@ public class Demo implements AutoCloseable {
             if (cmd.hasOption("p")) {
                 builder.withCredentials(cmd.getOptionValue("u"), cmd.getOptionValue('p'));
             } else {
-                throw new IllegalArgumentException( "Password (-p) must be provided with user.");
+                throw new IllegalArgumentException("Password (-p) must be provided with user.");
             }
         }
 
-        try (Demo demo = new Demo( builder )) {
+        try (Demo demo = new Demo(builder)) {
 
-            if (cmd.hasOption( "c")) {
+            if (cmd.hasOption("c")) {
                 demo.initTable();
             }
-            if (cmd.hasOption( "l")) {
+            if (cmd.hasOption("l")) {
                 int limit = 0;
                 if (cmd.hasOption('n')) {
                     try {
                         limit = Integer.parseInt(cmd.getOptionValue('n'));
                     } catch (NumberFormatException e) {
-                        throw new IllegalArgumentException( String.format("load-limit (-n) must be a number.  '%s' provided", cmd.getOptionValue('n')) );
+                        throw new IllegalArgumentException(String
+                                .format("load-limit (-n) must be a number.  '%s' provided", cmd.getOptionValue('n')));
                     }
                 }
-                demo.load(GeoNameIterator.DEFAULT_INPUT, limit );
+                demo.load(GeoNameIterator.DEFAULT_INPUT, limit);
             }
 
             try (BufferedReader reader = new BufferedReader(new InputStreamReader(System.in))) {

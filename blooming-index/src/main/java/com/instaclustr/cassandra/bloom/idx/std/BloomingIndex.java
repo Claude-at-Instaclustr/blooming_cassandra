@@ -222,7 +222,7 @@ public class BloomingIndex implements Index {
 
         indexEntriesPerRow = calculateRatio ? calculateIndexPerRow(numberOfBits, numberOfItems, numberOfFunctions)
                 : 0.0;
-        usePrimaryFilter = toBoolean( indexDef.options.get("usePrimaryFilter"), false );
+        usePrimaryFilter = toBoolean(indexDef.options.get("usePrimaryFilter"), false);
     }
 
     /**
@@ -423,11 +423,13 @@ public class BloomingIndex implements Index {
     public BiFunction<PartitionIterator, ReadCommand, PartitionIterator> postProcessorFor(ReadCommand command) {
         logger.debug("postProcessorFor");
 
-        /* this looks a bit messy but we are building a partition iterators that only return
-         * unique rowKey, and row clustering combinations.  This is the same combination that is
-         * used by BloomingIndexSerde to create clustering for the internal tables.
+        /*
+         * this looks a bit messy but we are building a partition iterators that only
+         * return unique rowKey, and row clustering combinations. This is the same
+         * combination that is used by BloomingIndexSerde to create clustering for the
+         * internal tables.
          */
-        return new BiFunction<PartitionIterator, ReadCommand, PartitionIterator>(){
+        return new BiFunction<PartitionIterator, ReadCommand, PartitionIterator>() {
             Set<Clustering<?>> seen = new HashSet<Clustering<?>>();
 
             @Override
@@ -449,11 +451,11 @@ public class BloomingIndex implements Index {
                     public RowIterator next() {
                         return new RowIterator() {
                             private RowIterator wrappedRI = wrappedPI.next();
-                            private ExtendedIterator<Row> ext = WrappedIterator.create( wrappedRI )
-                                    .filterKeep( row -> {
-                                        Clustering<?> cluster = serde.buildIndexClustering( wrappedRI.partitionKey(), row.clustering() );
-                                        return seen.add( cluster );
-                                    });
+                            private ExtendedIterator<Row> ext = WrappedIterator.create(wrappedRI).filterKeep(row -> {
+                                Clustering<?> cluster = serde.buildIndexClustering(wrappedRI.partitionKey(),
+                                        row.clustering());
+                                return seen.add(cluster);
+                            });
 
                             @Override
                             public RegularAndStaticColumns columns() {
@@ -510,8 +512,10 @@ public class BloomingIndex implements Index {
                                 return ext.next();
                             }
                         };
-                    }};
-            }};
+                    }
+                };
+            }
+        };
     }
 
     @Override
@@ -549,14 +553,14 @@ public class BloomingIndex implements Index {
 
         try {
             WrappedIterator.create(update.iterator()).mapWith(r -> r.getCell(indexedColumn)).filterDrop(b -> b == null)
-                    .mapWith(Cell::buffer).forEach(v -> {
-                        if (v.remaining() >= FBUtilities.MAX_UNSIGNED_SHORT) {
-                            throw new InvalidRequestException(String.format(
-                                    "Cannot index value of size %d for index %s on %s(%s) (maximum allowed size=%d)",
-                                    v.remaining(), metadata.name, baseCfs.metadata, indexedColumn.name.toString(),
-                                    FBUtilities.MAX_UNSIGNED_SHORT));
-                        }
-                    });
+            .mapWith(Cell::buffer).forEach(v -> {
+                if (v.remaining() >= FBUtilities.MAX_UNSIGNED_SHORT) {
+                    throw new InvalidRequestException(String.format(
+                            "Cannot index value of size %d for index %s on %s(%s) (maximum allowed size=%d)",
+                            v.remaining(), metadata.name, baseCfs.metadata, indexedColumn.name.toString(),
+                            FBUtilities.MAX_UNSIGNED_SHORT));
+                }
+            });
         } catch (Exception e) {
             throw new InvalidRequestException(e.getMessage(), e);
         }
@@ -641,77 +645,62 @@ public class BloomingIndex implements Index {
             return dflt;
         }
         switch (str.length()) {
-            case 1: {
-                final char ch0 = str.charAt(0);
-                if (ch0 == 'y' || ch0 == 'Y' ||
-                    ch0 == 't' || ch0 == 'T' ||
-                    ch0 == '1') {
-                    return true;
-                }
-                if (ch0 == 'n' || ch0 == 'N' ||
-                    ch0 == 'f' || ch0 == 'F' ||
-                    ch0 == '0') {
-                    return false;
-                }
-                break;
+        case 1: {
+            final char ch0 = str.charAt(0);
+            if (ch0 == 'y' || ch0 == 'Y' || ch0 == 't' || ch0 == 'T' || ch0 == '1') {
+                return true;
             }
-            case 2: {
-                final char ch0 = str.charAt(0);
-                final char ch1 = str.charAt(1);
-                if ((ch0 == 'o' || ch0 == 'O') &&
-                    (ch1 == 'n' || ch1 == 'N') ) {
-                    return true;
-                }
-                if ((ch0 == 'n' || ch0 == 'N') &&
-                    (ch1 == 'o' || ch1 == 'O') ) {
-                    return false;
-                }
-                break;
+            if (ch0 == 'n' || ch0 == 'N' || ch0 == 'f' || ch0 == 'F' || ch0 == '0') {
+                return false;
             }
-            case 3: {
-                final char ch0 = str.charAt(0);
-                final char ch1 = str.charAt(1);
-                final char ch2 = str.charAt(2);
-                if ((ch0 == 'y' || ch0 == 'Y') &&
-                    (ch1 == 'e' || ch1 == 'E') &&
-                    (ch2 == 's' || ch2 == 'S') ) {
-                    return true;
-                }
-                if ((ch0 == 'o' || ch0 == 'O') &&
-                    (ch1 == 'f' || ch1 == 'F') &&
-                    (ch2 == 'f' || ch2 == 'F') ) {
-                    return false;
-                }
-                break;
+            break;
+        }
+        case 2: {
+            final char ch0 = str.charAt(0);
+            final char ch1 = str.charAt(1);
+            if ((ch0 == 'o' || ch0 == 'O') && (ch1 == 'n' || ch1 == 'N')) {
+                return true;
             }
-            case 4: {
-                final char ch0 = str.charAt(0);
-                final char ch1 = str.charAt(1);
-                final char ch2 = str.charAt(2);
-                final char ch3 = str.charAt(3);
-                if ((ch0 == 't' || ch0 == 'T') &&
-                    (ch1 == 'r' || ch1 == 'R') &&
-                    (ch2 == 'u' || ch2 == 'U') &&
-                    (ch3 == 'e' || ch3 == 'E') ) {
-                    return true;
-                }
-                break;
+            if ((ch0 == 'n' || ch0 == 'N') && (ch1 == 'o' || ch1 == 'O')) {
+                return false;
             }
-            case 5: {
-                final char ch0 = str.charAt(0);
-                final char ch1 = str.charAt(1);
-                final char ch2 = str.charAt(2);
-                final char ch3 = str.charAt(3);
-                final char ch4 = str.charAt(4);
-                if ((ch0 == 'f' || ch0 == 'F') &&
-                    (ch1 == 'a' || ch1 == 'A') &&
-                    (ch2 == 'l' || ch2 == 'L') &&
-                    (ch3 == 's' || ch3 == 'S') &&
-                    (ch4 == 'e' || ch4 == 'E') ) {
-                    return false;
-                }
-                break;
+            break;
+        }
+        case 3: {
+            final char ch0 = str.charAt(0);
+            final char ch1 = str.charAt(1);
+            final char ch2 = str.charAt(2);
+            if ((ch0 == 'y' || ch0 == 'Y') && (ch1 == 'e' || ch1 == 'E') && (ch2 == 's' || ch2 == 'S')) {
+                return true;
             }
+            if ((ch0 == 'o' || ch0 == 'O') && (ch1 == 'f' || ch1 == 'F') && (ch2 == 'f' || ch2 == 'F')) {
+                return false;
+            }
+            break;
+        }
+        case 4: {
+            final char ch0 = str.charAt(0);
+            final char ch1 = str.charAt(1);
+            final char ch2 = str.charAt(2);
+            final char ch3 = str.charAt(3);
+            if ((ch0 == 't' || ch0 == 'T') && (ch1 == 'r' || ch1 == 'R') && (ch2 == 'u' || ch2 == 'U')
+                    && (ch3 == 'e' || ch3 == 'E')) {
+                return true;
+            }
+            break;
+        }
+        case 5: {
+            final char ch0 = str.charAt(0);
+            final char ch1 = str.charAt(1);
+            final char ch2 = str.charAt(2);
+            final char ch3 = str.charAt(3);
+            final char ch4 = str.charAt(4);
+            if ((ch0 == 'f' || ch0 == 'F') && (ch1 == 'a' || ch1 == 'A') && (ch2 == 'l' || ch2 == 'L')
+                    && (ch3 == 's' || ch3 == 'S') && (ch4 == 'e' || ch4 == 'E')) {
+                return false;
+            }
+            break;
+        }
         default:
             break;
         }

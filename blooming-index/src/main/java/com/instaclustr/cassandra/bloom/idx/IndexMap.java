@@ -52,6 +52,7 @@ public class IndexMap {
     }
 
     private IndexKey key;
+
     /**
      * Constructor.
      * @param position the byte position of the code in the bloom filter.
@@ -79,7 +80,7 @@ public class IndexMap {
 
     @Override
     public String toString() {
-        StringBuilder sb = new StringBuilder(String.format("IndexMap[%d, [", getPosition() ));
+        StringBuilder sb = new StringBuilder(String.format("IndexMap[%d, [", getPosition()));
         int[] codes = getCodes();
         for (int i = 0; i < codes.length; i++) {
             sb.append(String.format("%s 0x%02x", i > 0 ? "," : "", codes[i]));
