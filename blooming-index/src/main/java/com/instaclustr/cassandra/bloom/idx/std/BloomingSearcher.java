@@ -49,7 +49,6 @@ import org.apache.commons.collections4.bloomfilter.hasher.SimpleHasher;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.instaclustr.cassandra.bloom.idx.IndexKey;
 import com.instaclustr.iterator.util.ExtendedIterator;
 import com.instaclustr.iterator.util.WrappedIterator;
 

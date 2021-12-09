@@ -35,11 +35,11 @@ import org.apache.cassandra.db.rows.UnfilteredRowIterator;
 import org.apache.cassandra.index.Index.Indexer;
 import org.apache.cassandra.schema.ColumnMetadata;
 import org.apache.cassandra.schema.TableMetadata;
+import org.apache.commons.collections4.bloomfilter.BitMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.instaclustr.cassandra.bloom.idx.CountingFilter;
-import com.instaclustr.cassandra.bloom.idx.IndexKey;
 import com.instaclustr.iterator.util.ExtendedIterator;
 import com.instaclustr.iterator.util.WrappedIterator;
 

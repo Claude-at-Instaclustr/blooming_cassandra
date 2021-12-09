@@ -14,14 +14,17 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.instaclustr.cassandra.bloom.idx.std;
+package com.instaclustr.cassandra.bloom.idx.mem;
 
 import static org.apache.cassandra.cql3.statements.RequestValidations.checkFalse;
 
+import java.io.File;
+import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -38,6 +41,7 @@ import org.apache.cassandra.cql3.statements.schema.IndexTarget;
 import org.apache.cassandra.db.Clustering;
 import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.DecoratedKey;
+import org.apache.cassandra.db.Directories;
 import org.apache.cassandra.db.ReadCommand;
 import org.apache.cassandra.db.RegularAndStaticColumns;
 import org.apache.cassandra.db.SystemKeyspace;
@@ -47,11 +51,15 @@ import org.apache.cassandra.db.filter.RowFilter;
 import org.apache.cassandra.db.lifecycle.SSTableSet;
 import org.apache.cassandra.db.lifecycle.View;
 import org.apache.cassandra.db.marshal.AbstractType;
+import org.apache.cassandra.db.marshal.BytesType;
+import org.apache.cassandra.db.marshal.Int32Type;
+import org.apache.cassandra.db.marshal.LongType;
 import org.apache.cassandra.db.partitions.PartitionIterator;
 import org.apache.cassandra.db.partitions.PartitionUpdate;
 import org.apache.cassandra.db.rows.Cell;
 import org.apache.cassandra.db.rows.Row;
 import org.apache.cassandra.db.rows.RowIterator;
+import org.apache.cassandra.dht.LocalPartitioner;
 import org.apache.cassandra.exceptions.InvalidRequestException;
 import org.apache.cassandra.index.Index;
 import org.apache.cassandra.index.IndexRegistry;
@@ -64,6 +72,7 @@ import org.apache.cassandra.io.sstable.format.SSTableReader;
 import org.apache.cassandra.schema.ColumnMetadata;
 import org.apache.cassandra.schema.IndexMetadata;
 import org.apache.cassandra.schema.TableMetadata;
+import org.apache.cassandra.schema.TableMetadataRef;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.Pair;
 import org.apache.cassandra.utils.concurrent.Refs;
@@ -71,9 +80,11 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.google.common.collect.ImmutableSet;
-import com.instaclustr.cassandra.bloom.idx.std.BloomingIndexSerde;
+import com.instaclustr.cassandra.bloom.idx.mem.tables.IdxTable;
+import com.instaclustr.cassandra.bloom.idx.mem.tables.KeyTable;
 import com.instaclustr.cassandra.bloom.idx.std.BloomingIndexer;
 import com.instaclustr.cassandra.bloom.idx.std.BloomingSearcher;
+import com.instaclustr.iterator.util.ClosableIterator;
 import com.instaclustr.iterator.util.ExtendedIterator;
 import com.instaclustr.iterator.util.WrappedIterator;
 
@@ -144,9 +155,9 @@ import com.instaclustr.iterator.util.WrappedIterator;
  * </dl>
  *
  */
-public class BloomingIndex implements Index {
+public class FlatBloomingIndex implements Index {
 
-    private static final Logger logger = LoggerFactory.getLogger(BloomingIndex.class);
+    private static final Logger logger = LoggerFactory.getLogger(FlatBloomingIndex.class);
 
     /**
      * The a base table where the data are stored.
@@ -163,27 +174,17 @@ public class BloomingIndex implements Index {
     /**
      * The Serde to use to read/write the index table.
      */
-    private BloomingIndexSerde serde;
-
-    /**
-     * The estimated number of entries in the index table per row of the base table.
-     * may be 0.0;
-     */
-    private final double indexEntriesPerRow;
-
-    private final boolean usePrimaryFilter;
+    private FlatBloomingIndexSerde serde;
 
     /**
      * Constructor
      * @param baseCfs  The the base table.
      * @param indexDef the the index definition.
      */
-    public BloomingIndex(ColumnFamilyStore baseCfs, IndexMetadata indexDef) {
+    public FlatBloomingIndex(ColumnFamilyStore baseCfs, IndexMetadata indexDef) {
         logger.debug("Constructor");
         this.baseCfs = baseCfs;
         this.metadata = indexDef;
-
-        serde = new BloomingIndexSerde(baseCfs, indexDef);
 
         Pair<ColumnMetadata, IndexTarget.Type> target = TargetParser.parse(baseCfs.metadata(), indexDef);
         indexedColumn = target.left;
@@ -193,39 +194,24 @@ public class BloomingIndex implements Index {
                     + "counter column, partition key, primary key column, or static column");
         }
 
-        // parse ints but store as doubles.
-        // The maximum number of bits in the Bloom filter (May be 0.0)
-
-        final double numberOfBits = parseInt(indexDef.options, "numberOfBits");
-
-        // The maximum number of hash functions used for each item in the Bloom filter
-        // (May be 0.0)
-        final double numberOfFunctions = parseInt(indexDef.options, "numberOfFunctions");
-
-        // The maximum number of items the Bloom filter (May be 0.0)
-        final double numberOfItems = parseInt(indexDef.options, "numberOfItems");
-
-        boolean calculateRatio = true;
-        // it at least one was specified
-        if (numberOfBits >= 0.0 || numberOfFunctions >= 0.0 || numberOfItems >= 0.0) {
-            // then if any is not specified or is zero.
-            if (numberOfBits <= 0.0) {
-                logger.warn("index created with numberOfBits ({}) <= zero", numberOfBits);
-                calculateRatio = false;
-            }
-            if (numberOfItems <= 0.0) {
-                logger.warn("index created with numberOfItems ({}) <= zero", numberOfItems);
-                calculateRatio = false;
-            }
-            if (numberOfFunctions <= 0.0) {
-                logger.warn("index created with numberOfFunctions ({}) <= zero", numberOfFunctions);
-                calculateRatio = false;
-            }
+        final String dataDir = indexDef.options.get( "dataDir");
+        if (dataDir == null || dataDir.length() == 0) {
+            throw new IllegalArgumentException(String.format("dataDir must be specified"));
         }
+        File dir = new File( dataDir );
+        if (!dir.exists()  || !dir.isDirectory()) {
+            throw new IllegalArgumentException(String.format("dataDir must exist and be a directory"));
+        }
+        final int numberOfBits = parseInt(indexDef.options, "numberOfBits");
 
-        indexEntriesPerRow = calculateRatio ? calculateIndexPerRow(numberOfBits, numberOfItems, numberOfFunctions)
-                : 0.0;
-        usePrimaryFilter = toBoolean(indexDef.options.get("usePrimaryFilter"), false);
+            if (numberOfBits <= 0.0) {
+                logger.error("index created with numberOfBits ({}) <= zero", numberOfBits);
+                throw new IllegalArgumentException(String.format("index created with numberOfBits (%s) <= zero", numberOfBits));
+            }
+
+            serde = new FlatBloomingIndexSerde(dir, baseCfs, indexDef, numberOfBits);
+
+
     }
 
     /**
@@ -244,49 +230,6 @@ public class BloomingIndex implements Index {
         }
     }
 
-    private static double calculateIndexPerRow(double m, double n, double k) {
-
-        // kn = number of bits requested from hasher
-        double kn = k * n;
-
-        // @formatter:off
-        //
-        // the probability of a collision when selecting from a population of i
-        // in a range of [1; m] is:
-        //
-        //                        i
-        //                / m - 1 \
-        // q(i;m) =  1 - |  -----  |
-        //                \   m   /
-        //
-        //
-        // The probability that the ith integer randomly chosen from
-        // [1, m] will repeat a previous choice equals q(i − 1; m) so the
-        // total expected collisions in kn selections is
-        //
-        //      kn
-        //     =====                                    kn
-        //      \                               / m - 1 \
-        //       >    q(i - 1; m ) = kn - m + m|  ----- |
-        //      /                               \   m   /
-        //      =====
-        //      i = 1
-        //
-        // @formatter:on
-        double collisions = kn - m + m * Math.pow((m - 1) / m, kn);
-        // expected number of bits per entry
-        double bits = kn - collisions;
-        /*
-         * the number of index entries per row is the lesser of the number of bits or
-         * the number of bytes in the bloom filter. The reasoning here is that the bits
-         * are evenly distributed across the bloom filter, so the probability of a bit
-         * being in the same byte as another bit reaches 1 when there are more bits than
-         * bytes. Since we only record bytes in the index we need the minimum of the two
-         * values.
-         */
-        return Math.min(bits, m / Byte.SIZE);
-
-    }
 
     @Override
     public void register(IndexRegistry registry) {
@@ -313,8 +256,7 @@ public class BloomingIndex implements Index {
 
     @Override
     public Optional<ColumnFamilyStore> getBackingTable() {
-        logger.debug("getBackingTable");
-        return Optional.of(serde.getBackingTable());
+        return null;
     }
 
     @Override
@@ -408,18 +350,12 @@ public class BloomingIndex implements Index {
 
     @Override
     public long getEstimatedResultRows() {
-        logger.debug("getEstimatedResultRows");
-        logger.debug("baseCfs estimateKeys {}", baseCfs.estimateKeys());
-        logger.debug("baseCfs getMeanPartitionSize {}", baseCfs.getMeanPartitionSize());
-        logger.debug("baseCfs getMeanRowCount {}", baseCfs.getMeanRowCount());
-
-        // If any of the parameters are not set and there is data in the index
-        // then serde.getEstimatedResultRows() will return -1.
-        // in this case we asume the index is used on all the rows in the base table.
-        long result = serde.getEstimatedResultRows(indexEntriesPerRow);
-        result = result == -1 ? baseCfs.estimateKeys() : result;
-        logger.debug("getEstimatedResultRows returning {}", result);
-        return result;
+        try {
+            return serde.count();
+        } catch (IOException e) {
+            logger.warn( "Error accessing FlatBloofi count", e );
+            return baseCfs.getMeanRowCount();
+        }
     }
 
     @Override
@@ -542,7 +478,7 @@ public class BloomingIndex implements Index {
         Optional<RowFilter.Expression> target = getTargetExpression(command.rowFilter().getExpressions());
 
         if (target.isPresent()) {
-            return new BloomingSearcher(usePrimaryFilter, indexedColumn, baseCfs, serde, command, target.get());
+            return new FlatBloomingSearcher(serde, indexedColumn, baseCfs, command, target.get());
         }
 
         return null;
@@ -573,7 +509,7 @@ public class BloomingIndex implements Index {
     public Indexer indexerFor(final DecoratedKey key, final RegularAndStaticColumns columns, final int nowInSec,
             final WriteContext ctx, final IndexTransaction.Type transactionType) {
         logger.debug("indexerFor");
-        return columns.contains(indexedColumn) ? new BloomingIndexer(key, baseCfs, serde, indexedColumn, nowInSec, ctx)
+        return columns.contains(indexedColumn) ? new FlatBloomingIndexer(serde, key, baseCfs, indexedColumn, nowInSec, ctx)
                 : null;
     }
 

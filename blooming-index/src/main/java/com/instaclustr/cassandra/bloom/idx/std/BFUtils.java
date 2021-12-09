@@ -22,7 +22,6 @@ import java.util.Iterator;
 import java.util.NoSuchElementException;
 import org.apache.cassandra.db.Clustering;
 
-import com.instaclustr.cassandra.bloom.idx.IndexKey;
 import com.instaclustr.iterator.util.ExtendedIterator;
 import com.instaclustr.iterator.util.WrappedIterator;
 
