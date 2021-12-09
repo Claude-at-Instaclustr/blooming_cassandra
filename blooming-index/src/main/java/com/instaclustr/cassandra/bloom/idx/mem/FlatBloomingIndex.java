@@ -23,25 +23,19 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.HashSet;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.concurrent.Future;
 import java.util.function.BiFunction;
-import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
 
 import org.apache.cassandra.cql3.Operator;
 import org.apache.cassandra.cql3.statements.schema.IndexTarget;
-import org.apache.cassandra.db.Clustering;
 import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.DecoratedKey;
-import org.apache.cassandra.db.Directories;
 import org.apache.cassandra.db.ReadCommand;
 import org.apache.cassandra.db.RegularAndStaticColumns;
 import org.apache.cassandra.db.SystemKeyspace;
@@ -51,15 +45,9 @@ import org.apache.cassandra.db.filter.RowFilter;
 import org.apache.cassandra.db.lifecycle.SSTableSet;
 import org.apache.cassandra.db.lifecycle.View;
 import org.apache.cassandra.db.marshal.AbstractType;
-import org.apache.cassandra.db.marshal.BytesType;
-import org.apache.cassandra.db.marshal.Int32Type;
-import org.apache.cassandra.db.marshal.LongType;
 import org.apache.cassandra.db.partitions.PartitionIterator;
 import org.apache.cassandra.db.partitions.PartitionUpdate;
 import org.apache.cassandra.db.rows.Cell;
-import org.apache.cassandra.db.rows.Row;
-import org.apache.cassandra.db.rows.RowIterator;
-import org.apache.cassandra.dht.LocalPartitioner;
 import org.apache.cassandra.exceptions.InvalidRequestException;
 import org.apache.cassandra.index.Index;
 import org.apache.cassandra.index.IndexRegistry;
@@ -71,8 +59,6 @@ import org.apache.cassandra.io.sstable.ReducingKeyIterator;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
 import org.apache.cassandra.schema.ColumnMetadata;
 import org.apache.cassandra.schema.IndexMetadata;
-import org.apache.cassandra.schema.TableMetadata;
-import org.apache.cassandra.schema.TableMetadataRef;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.Pair;
 import org.apache.cassandra.utils.concurrent.Refs;
@@ -80,12 +66,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.google.common.collect.ImmutableSet;
-import com.instaclustr.cassandra.bloom.idx.mem.tables.IdxTable;
-import com.instaclustr.cassandra.bloom.idx.mem.tables.KeyTable;
-import com.instaclustr.cassandra.bloom.idx.std.BloomingIndexer;
-import com.instaclustr.cassandra.bloom.idx.std.BloomingSearcher;
-import com.instaclustr.iterator.util.ClosableIterator;
-import com.instaclustr.iterator.util.ExtendedIterator;
 import com.instaclustr.iterator.util.WrappedIterator;
 
 /**
@@ -194,23 +174,23 @@ public class FlatBloomingIndex implements Index {
                     + "counter column, partition key, primary key column, or static column");
         }
 
-        final String dataDir = indexDef.options.get( "dataDir");
+        final String dataDir = indexDef.options.get("dataDir");
         if (dataDir == null || dataDir.length() == 0) {
             throw new IllegalArgumentException(String.format("dataDir must be specified"));
         }
-        File dir = new File( dataDir );
-        if (!dir.exists()  || !dir.isDirectory()) {
+        File dir = new File(dataDir);
+        if (!dir.exists() || !dir.isDirectory()) {
             throw new IllegalArgumentException(String.format("dataDir must exist and be a directory"));
         }
         final int numberOfBits = parseInt(indexDef.options, "numberOfBits");
 
-            if (numberOfBits <= 0.0) {
-                logger.error("index created with numberOfBits ({}) <= zero", numberOfBits);
-                throw new IllegalArgumentException(String.format("index created with numberOfBits (%s) <= zero", numberOfBits));
-            }
+        if (numberOfBits <= 0.0) {
+            logger.error("index created with numberOfBits ({}) <= zero", numberOfBits);
+            throw new IllegalArgumentException(
+                    String.format("index created with numberOfBits (%s) <= zero", numberOfBits));
+        }
 
-            serde = new FlatBloomingIndexSerde(dir, baseCfs, indexDef, numberOfBits);
-
+        serde = new FlatBloomingIndexSerde(dir, baseCfs, indexDef, numberOfBits);
 
     }
 
@@ -229,7 +209,6 @@ public class FlatBloomingIndex implements Index {
             throw new IllegalArgumentException(String.format("Value for option '%s' is not an integer", option), e);
         }
     }
-
 
     @Override
     public void register(IndexRegistry registry) {
@@ -353,7 +332,7 @@ public class FlatBloomingIndex implements Index {
         try {
             return serde.count();
         } catch (IOException e) {
-            logger.warn( "Error accessing FlatBloofi count", e );
+            logger.warn("Error accessing FlatBloofi count", e);
             return baseCfs.getMeanRowCount();
         }
     }
@@ -361,100 +340,7 @@ public class FlatBloomingIndex implements Index {
     @Override
     public BiFunction<PartitionIterator, ReadCommand, PartitionIterator> postProcessorFor(ReadCommand command) {
         logger.debug("postProcessorFor");
-
-        /*
-         * this looks a bit messy but we are building a partition iterators that only
-         * return unique rowKey, and row clustering combinations. This is the same
-         * combination that is used by BloomingIndexSerde to create clustering for the
-         * internal tables.
-         */
-        return new BiFunction<PartitionIterator, ReadCommand, PartitionIterator>() {
-            Set<Clustering<?>> seen = new HashSet<Clustering<?>>();
-
-            @Override
-            public PartitionIterator apply(PartitionIterator t, ReadCommand u) {
-                return new PartitionIterator() {
-                    private PartitionIterator wrappedPI = t;
-
-                    @Override
-                    public void close() {
-                        wrappedPI.close();
-                    }
-
-                    @Override
-                    public boolean hasNext() {
-                        return wrappedPI.hasNext();
-                    }
-
-                    @Override
-                    public RowIterator next() {
-                        return new RowIterator() {
-                            private RowIterator wrappedRI = wrappedPI.next();
-                            private ExtendedIterator<Row> ext = WrappedIterator.create(wrappedRI).filterKeep(row -> {
-                                Clustering<?> cluster = serde.buildIndexClustering(wrappedRI.partitionKey(),
-                                        row.clustering());
-                                return seen.add(cluster);
-                            });
-
-                            @Override
-                            public RegularAndStaticColumns columns() {
-                                return wrappedRI.columns();
-                            }
-
-                            @Override
-                            public void forEachRemaining(Consumer<? super Row> arg0) {
-                                wrappedRI.forEachRemaining(arg0);
-                            }
-
-                            @Override
-                            public TableMetadata metadata() {
-                                return wrappedRI.metadata();
-                            }
-
-                            @Override
-                            public boolean isReverseOrder() {
-                                return wrappedRI.isReverseOrder();
-                            }
-
-                            @Override
-                            public boolean isEmpty() {
-                                return wrappedRI.isEmpty();
-                            }
-
-                            @Override
-                            public DecoratedKey partitionKey() {
-                                return wrappedRI.partitionKey();
-                            }
-
-                            @Override
-                            public void remove() {
-                                wrappedRI.remove();
-                            }
-
-                            @Override
-                            public Row staticRow() {
-                                return wrappedRI.staticRow();
-                            }
-
-                            @Override
-                            public void close() {
-                                wrappedRI.close();
-                            }
-
-                            @Override
-                            public boolean hasNext() {
-                                return ext.hasNext();
-                            }
-
-                            @Override
-                            public Row next() {
-                                return ext.next();
-                            }
-                        };
-                    }
-                };
-            }
-        };
+        return (partitionIterator, readCommand) -> partitionIterator;
     }
 
     @Override
@@ -509,8 +395,9 @@ public class FlatBloomingIndex implements Index {
     public Indexer indexerFor(final DecoratedKey key, final RegularAndStaticColumns columns, final int nowInSec,
             final WriteContext ctx, final IndexTransaction.Type transactionType) {
         logger.debug("indexerFor");
-        return columns.contains(indexedColumn) ? new FlatBloomingIndexer(serde, key, baseCfs, indexedColumn, nowInSec, ctx)
-                : null;
+        return columns.contains(indexedColumn)
+                ? new FlatBloomingIndexer(serde, key, indexedColumn, nowInSec, ctx)
+                        : null;
     }
 
     /**
@@ -568,82 +455,4 @@ public class FlatBloomingIndex implements Index {
                 .collect(Collectors.joining(", "));
     }
 
-    private static final String TRUE = "true";
-
-    private static boolean toBoolean(final String str, boolean dflt) {
-        // Previously used equalsIgnoreCase, which was fast for interned 'true'.
-        // Non interned 'true' matched 15 times slower.
-        //
-        // Optimisation provides same performance as before for interned 'true'.
-        // Similar performance for null, 'false', and other strings not length 2/3/4.
-        // 'true'/'TRUE' match 4 times slower, 'tRUE'/'True' 7 times slower.
-        if (str == TRUE) {
-            return true;
-        }
-        if (str == null) {
-            return dflt;
-        }
-        switch (str.length()) {
-        case 1: {
-            final char ch0 = str.charAt(0);
-            if (ch0 == 'y' || ch0 == 'Y' || ch0 == 't' || ch0 == 'T' || ch0 == '1') {
-                return true;
-            }
-            if (ch0 == 'n' || ch0 == 'N' || ch0 == 'f' || ch0 == 'F' || ch0 == '0') {
-                return false;
-            }
-            break;
-        }
-        case 2: {
-            final char ch0 = str.charAt(0);
-            final char ch1 = str.charAt(1);
-            if ((ch0 == 'o' || ch0 == 'O') && (ch1 == 'n' || ch1 == 'N')) {
-                return true;
-            }
-            if ((ch0 == 'n' || ch0 == 'N') && (ch1 == 'o' || ch1 == 'O')) {
-                return false;
-            }
-            break;
-        }
-        case 3: {
-            final char ch0 = str.charAt(0);
-            final char ch1 = str.charAt(1);
-            final char ch2 = str.charAt(2);
-            if ((ch0 == 'y' || ch0 == 'Y') && (ch1 == 'e' || ch1 == 'E') && (ch2 == 's' || ch2 == 'S')) {
-                return true;
-            }
-            if ((ch0 == 'o' || ch0 == 'O') && (ch1 == 'f' || ch1 == 'F') && (ch2 == 'f' || ch2 == 'F')) {
-                return false;
-            }
-            break;
-        }
-        case 4: {
-            final char ch0 = str.charAt(0);
-            final char ch1 = str.charAt(1);
-            final char ch2 = str.charAt(2);
-            final char ch3 = str.charAt(3);
-            if ((ch0 == 't' || ch0 == 'T') && (ch1 == 'r' || ch1 == 'R') && (ch2 == 'u' || ch2 == 'U')
-                    && (ch3 == 'e' || ch3 == 'E')) {
-                return true;
-            }
-            break;
-        }
-        case 5: {
-            final char ch0 = str.charAt(0);
-            final char ch1 = str.charAt(1);
-            final char ch2 = str.charAt(2);
-            final char ch3 = str.charAt(3);
-            final char ch4 = str.charAt(4);
-            if ((ch0 == 'f' || ch0 == 'F') && (ch1 == 'a' || ch1 == 'A') && (ch2 == 'l' || ch2 == 'L')
-                    && (ch3 == 's' || ch3 == 'S') && (ch4 == 'e' || ch4 == 'E')) {
-                return false;
-            }
-            break;
-        }
-        default:
-            break;
-        }
-
-        return dflt;
-    }
 }

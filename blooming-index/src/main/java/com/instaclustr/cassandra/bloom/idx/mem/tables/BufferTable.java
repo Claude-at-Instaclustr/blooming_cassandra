@@ -1,30 +1,17 @@
 package com.instaclustr.cassandra.bloom.idx.mem.tables;
 
 import java.io.File;
-import java.io.FileNotFoundException;
 import java.io.IOException;
-import java.io.RandomAccessFile;
-import java.nio.ByteBuffer;
 import java.nio.LongBuffer;
-import java.nio.MappedByteBuffer;
-import java.nio.channels.FileChannel;
-import java.util.BitSet;
-import java.util.List;
-import java.util.NoSuchElementException;
-import java.util.PrimitiveIterator;
-import java.util.function.Consumer;
 import java.util.function.IntConsumer;
-import java.util.function.LongConsumer;
-
-import org.apache.commons.collections4.bloomfilter.BitMapProducer;
-import org.apache.commons.collections4.bloomfilter.BloomFilter;
-import org.apache.commons.collections4.bloomfilter.Shape;
-
 import com.instaclustr.cassandra.bloom.idx.mem.tables.BusyTable.CloseableIteratorOfInt;
-
 import org.apache.commons.collections4.bloomfilter.BitMap;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class BufferTable extends AbstractTable implements AutoCloseable {
+
+    private static final Logger logger = LoggerFactory.getLogger(BufferTable.class);
 
     /**
      * The number of bits in the bloom filter.
@@ -34,15 +21,14 @@ public class BufferTable extends AbstractTable implements AutoCloseable {
     /**
      * The sizes for a block (Long.SIZE) bloom filters
      */
-    //private final int blockBytes;
+    // private final int blockBytes;
     private final int blockWords;
 
     /**
      * Sizes of a bloom filter
      */
-    //private final int filterBytes;
+    // private final int filterBytes;
     public final int filterWords;
-
 
     /**
      * The sizes for a singe bloom filter
@@ -52,27 +38,26 @@ public class BufferTable extends AbstractTable implements AutoCloseable {
      */
 
     public BufferTable(int numberOfBits, File bufferFile) throws IOException {
-        super( bufferFile );
+        super(bufferFile);
 
         this.numberOfBits = numberOfBits;
 
-        filterWords = BitMap.numberOfBitMaps( numberOfBits );
-        //filterBytes = filterWords * Long.BYTES;
+        filterWords = BitMap.numberOfBitMaps(numberOfBits);
+        // filterBytes = filterWords * Long.BYTES;
 
         blockWords = filterWords * Long.BYTES;
-        //blockBytes = filterBytes * Long.BYTES;
+        // blockBytes = filterBytes * Long.BYTES;
 
     }
 
     @Override
     public String toString() {
-        return "BufferTable: "+super.toString();
+        return "BufferTable: " + super.toString();
     }
 
-
-    private LongBuffer positionBuffer( LongBuffer buffer, int idx ) {
+    private LongBuffer positionBuffer(LongBuffer buffer, int idx) {
         final int offset = BitMap.getLongIndex(idx) * blockWords;
-        buffer.position( offset ).limit(offset+blockWords);
+        buffer.position(offset).limit(offset + blockWords);
         return buffer;
     }
 
@@ -86,14 +71,13 @@ public class BufferTable extends AbstractTable implements AutoCloseable {
      * @return {@code true} if the bit is enabled, {@code false} otherwise.
      */
     public static boolean contains(LongBuffer bitMaps, int idx) {
-        return idx >= 0
-                && BitMap.getLongIndex(idx) < bitMaps.limit()
+        return idx >= 0 && BitMap.getLongIndex(idx) < bitMaps.limit()
                 && (bitMaps.get(BitMap.getLongIndex(idx)) & BitMap.getLongBit(idx)) != 0;
     }
 
     public void setBloomAt(int idx, LongBuffer bloomFilter) throws IOException {
         // extract the proper block
-        LongBuffer block = positionBuffer( getWritableLongBuffer(), idx );
+        LongBuffer block = positionBuffer(getWritableLongBuffer(), idx);
         final long mask = BitMap.getLongBit(idx);
 
         for (int k = 0; k < numberOfBits; k++) {
@@ -103,37 +87,38 @@ public class BufferTable extends AbstractTable implements AutoCloseable {
             } else {
                 blockData &= ~mask;
             }
-            block.put(k);
+            block.put(k, blockData);
         }
     }
 
     public void search(IntConsumer result, LongBuffer bloomFilter, BusyTable busy) throws IOException {
         LongBuffer buffer = getLongBuffer();
         try {
-        //Get file channel in read-only mode
+            // Get file channel in read-only mode
             int blockLimit = buffer.remaining() / blockWords;
-          for (int bockIdx = 0; bockIdx < blockLimit; bockIdx++) {
+            for (int bockIdx = 0; bockIdx < blockLimit; bockIdx++) {
 
-              int offset = bockIdx*blockWords;
-              long w = ~0l;
-              CloseableIteratorOfInt iter = new CloseableIteratorOfInt(bloomFilter);
-              while (iter.hasNext()) {
-                  w &= buffer.get( offset+iter.next() );
-              }
-
-              while (w != 0) {
-                  long t = w & -w;
-                  int idx = Long.numberOfTrailingZeros(t) + (Long.SIZE * bockIdx);
-                  if (busy.isSet(idx)) {
-                      result.accept(idx);
-                  }
-                  w ^= t;
-              }
-          }
-      } finally {
-          buffer = null;
-      }
+                int offset = bockIdx * blockWords;
+                long w = ~0l;
+                try (CloseableIteratorOfInt iter = new CloseableIteratorOfInt(bloomFilter)) {
+                    while (iter.hasNext()) {
+                        w &= buffer.get(offset + iter.next());
+                    }
+                } catch (Exception shouldNotHappen) {
+                    logger.error("Error on close of iterator", shouldNotHappen);
+                }
+                while (w != 0) {
+                    long t = w & -w;
+                    int idx = Long.numberOfTrailingZeros(t) + (Long.SIZE * bockIdx);
+                    if (busy.isSet(idx)) {
+                        result.accept(idx);
+                    }
+                    w ^= t;
+                }
+            }
+        } finally {
+            buffer = null;
+        }
     }
-
 
 }

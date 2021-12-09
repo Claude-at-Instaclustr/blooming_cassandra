@@ -21,9 +21,7 @@ import java.nio.ByteBuffer;
 import java.nio.charset.CharacterCodingException;
 import java.util.SortedSet;
 import java.util.TreeSet;
-import java.util.function.Consumer;
 import java.util.function.Function;
-import java.util.function.IntConsumer;
 import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.db.ReadCommand;
@@ -41,8 +39,6 @@ import org.apache.cassandra.utils.ByteBufferUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.instaclustr.cassandra.bloom.idx.mem.tables.IdxTable;
-import com.instaclustr.cassandra.bloom.idx.mem.tables.KeyTable;
 import com.instaclustr.iterator.util.ExtendedIterator;
 import com.instaclustr.iterator.util.WrappedIterator;
 
@@ -76,6 +72,7 @@ public class FlatBloomingSearcher implements Searcher {
     final Function<ByteBuffer, DecoratedKey> buffer2Key;
 
     final FlatBloomingIndexSerde serde;
+
     /**
      * Constructor.
      *
@@ -87,9 +84,8 @@ public class FlatBloomingSearcher implements Searcher {
      * @param command The read command being executed.
      * @param expression The expression to use for the search.
      */
-        public FlatBloomingSearcher(FlatBloomingIndexSerde serde, final ColumnMetadata indexedColumn,
-            final ColumnFamilyStore baseCfs, final ReadCommand command,
-            final RowFilter.Expression expression) {
+    public FlatBloomingSearcher(FlatBloomingIndexSerde serde, final ColumnMetadata indexedColumn,
+            final ColumnFamilyStore baseCfs, final ReadCommand command, final RowFilter.Expression expression) {
         this.serde = serde;
         this.baseCfs = baseCfs;
         this.indexedColumn = indexedColumn;
@@ -137,11 +133,10 @@ public class FlatBloomingSearcher implements Searcher {
 
         SortedSet<DecoratedKey> result = new TreeSet<DecoratedKey>();
         try {
-            serde.search( (bb) -> result.add( buffer2Key.apply( bb )), expression.getIndexValue());
-        }
-        catch (IOException e) {
+            serde.search((bb) -> result.add(buffer2Key.apply(bb)), expression.getIndexValue());
+        } catch (IOException e) {
             // there is an error but we will return what we can.
-            logger.warn( "Error while locating keys", e);
+            logger.warn("Error while locating keys", e);
         }
 
         // return a PartitionIterator that contains all the results.
@@ -160,8 +155,6 @@ public class FlatBloomingSearcher implements Searcher {
         return createUnfilteredPartitionIterator(rowIterIter, command.metadata());
 
     }
-
-
 
     /**
      * Ensures that the ColumnFilter includes the indexed column.
@@ -231,6 +224,5 @@ public class FlatBloomingSearcher implements Searcher {
             }
         };
     }
-
 
 }

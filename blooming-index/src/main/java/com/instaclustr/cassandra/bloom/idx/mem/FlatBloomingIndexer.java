@@ -16,36 +16,18 @@
  */
 package com.instaclustr.cassandra.bloom.idx.mem;
 
-import java.util.Iterator;
-import java.util.function.Consumer;
-import java.util.function.IntConsumer;
-
 import org.apache.cassandra.db.Clustering;
-import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.db.DeletionTime;
 import org.apache.cassandra.db.LivenessInfo;
 import org.apache.cassandra.db.RangeTombstone;
-import org.apache.cassandra.db.ReadExecutionController;
-import org.apache.cassandra.db.SinglePartitionReadCommand;
 import org.apache.cassandra.db.WriteContext;
-import org.apache.cassandra.db.filter.ColumnFilter;
 import org.apache.cassandra.db.rows.Cell;
 import org.apache.cassandra.db.rows.Row;
-import org.apache.cassandra.db.rows.Unfiltered;
-import org.apache.cassandra.db.rows.UnfilteredRowIterator;
 import org.apache.cassandra.index.Index.Indexer;
 import org.apache.cassandra.schema.ColumnMetadata;
-import org.apache.cassandra.schema.TableMetadata;
-import org.apache.commons.collections4.bloomfilter.BitMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import com.instaclustr.cassandra.bloom.idx.CountingFilter;
-import com.instaclustr.cassandra.bloom.idx.mem.tables.IdxTable;
-import com.instaclustr.cassandra.bloom.idx.mem.tables.KeyTable;
-import com.instaclustr.iterator.util.ExtendedIterator;
-import com.instaclustr.iterator.util.WrappedIterator;
 
 /**
  * Performs the index updating for inserting or removing a single row from the base table.
@@ -72,10 +54,6 @@ public class FlatBloomingIndexer implements Indexer {
      * The context use for writing.
      */
     private final WriteContext ctx;
-    /**
-     * The base data table
-     */
-    private final ColumnFamilyStore baseCfs;
 
     private final FlatBloomingIndexSerde serde;
 
@@ -88,11 +66,10 @@ public class FlatBloomingIndexer implements Indexer {
      * @param nowInSec The time this operation was started.
      * @param ctx The context use for writing.
      */
-    public FlatBloomingIndexer(FlatBloomingIndexSerde serde, final DecoratedKey key, final ColumnFamilyStore baseCfs,
+    public FlatBloomingIndexer(FlatBloomingIndexSerde serde, final DecoratedKey key,
             final ColumnMetadata indexedColumn, final int nowInSec, final WriteContext ctx) {
         this.serde = serde;
         this.key = key;
-        this.baseCfs = baseCfs;
         this.indexedColumn = indexedColumn;
         this.nowInSec = nowInSec;
         this.ctx = ctx;
@@ -133,8 +110,7 @@ public class FlatBloomingIndexer implements Indexer {
         Clustering<?> clustering = row.clustering();
         LivenessInfo info = LivenessInfo.withExpirationTime(cell.timestamp(), cell.ttl(), cell.localDeletionTime());
 
-
-        serde.insert(key, clustering, info, ctx, cell.buffer() );
+        serde.insert(nowInSec, key, clustering, info, ctx, cell.buffer());
     }
 
     @Override
@@ -146,8 +122,8 @@ public class FlatBloomingIndexer implements Indexer {
             }
             return;
         }
-        removeRow( oldRowData );
-        insertRow( newRowData );
+        removeRow(oldRowData);
+        insertRow(newRowData);
     }
 
     @Override
@@ -162,7 +138,7 @@ public class FlatBloomingIndexer implements Indexer {
         }
         Clustering<?> clustering = row.clustering();
         DeletionTime deletedAt = new DeletionTime(cell.timestamp(), nowInSec);
-        serde.delete( key, clustering, deletedAt, ctx);
+        serde.delete(key, clustering, deletedAt, ctx);
 
     }
 

@@ -1,18 +1,13 @@
 package com.instaclustr.cassandra.bloom.idx.mem.tables;
 
 import java.io.File;
-import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 import java.nio.IntBuffer;
 import java.nio.LongBuffer;
-import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
-import java.util.PrimitiveIterator;
-
 import com.instaclustr.cassandra.bloom.idx.mem.FlatBloomingIndexSerde;
-
 
 public abstract class AbstractTable implements AutoCloseable {
 
@@ -22,7 +17,7 @@ public abstract class AbstractTable implements AutoCloseable {
 
     public AbstractTable(File file) throws IOException {
         this.file = file;
-        this.raFile = new RandomAccessFile( file, "rw" );
+        this.raFile = new RandomAccessFile(file, "rw");
         this.readBuffer = getBuffer(FileChannel.MapMode.READ_ONLY).asReadOnlyBuffer();
     }
 
@@ -41,9 +36,9 @@ public abstract class AbstractTable implements AutoCloseable {
         this.readBuffer = null;
     }
 
-    private final ByteBuffer getBuffer( FileChannel.MapMode mode ) throws IOException {
+    private final ByteBuffer getBuffer(FileChannel.MapMode mode) throws IOException {
         FileChannel fileChannel = raFile.getChannel();
-        //Get direct long buffer access using channel.map() operation
+        // Get direct long buffer access using channel.map() operation
         return fileChannel.map(mode, 0, fileChannel.size());
 
     }
@@ -64,7 +59,6 @@ public abstract class AbstractTable implements AutoCloseable {
         return getBuffer(FileChannel.MapMode.READ_WRITE).asIntBuffer();
     }
 
-
     protected final LongBuffer getLongBuffer() throws IOException {
         return readBuffer.asLongBuffer().duplicate();
     }
@@ -73,13 +67,12 @@ public abstract class AbstractTable implements AutoCloseable {
         return getBuffer(FileChannel.MapMode.READ_WRITE).asLongBuffer();
     }
 
-    public static void closeQuietly( AutoCloseable c ) {
+    public static void closeQuietly(AutoCloseable c) {
         try {
             c.close();
         } catch (Exception e) {
-            FlatBloomingIndexSerde.logger.error(String.format( "Exception thrown while closing %s", c), e);
+            FlatBloomingIndexSerde.logger.error(String.format("Exception thrown while closing %s", c), e);
         }
     }
-
 
 }
