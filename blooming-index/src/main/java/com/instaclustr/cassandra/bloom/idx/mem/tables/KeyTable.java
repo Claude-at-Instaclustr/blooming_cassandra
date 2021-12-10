@@ -14,20 +14,17 @@ public class KeyTable extends AbstractTable {
     private final IdxTable idxTable;
 
     /**
-     * Header strucutr
+     * Header structure
      *  int firstDeleted
      *  int lastDeleted
+     *
+     * deleted entry structure
+     *   int allocated;
+     *   int nextDeleted;
      */
+    private static final int BLOCK_BYTES = 2 * Integer.BYTES;
     private static final int FIRST_DELETED = 0;
     private static final int LAST_DELETED = 1;
-    private static final int HEADER_SIZE = 2 * Integer.BYTES;
-
-    private static final int DELETED_SIZE = 2 * Integer.BYTES;
-
-    private class Deleted {
-        int allocated;
-        int nextDeleted;
-    }
 
     @Override
     public void close() throws IOException {
@@ -41,7 +38,7 @@ public class KeyTable extends AbstractTable {
     }
 
     public KeyTable(File file) throws IOException {
-        super(file);
+        super(file, BLOCK_BYTES );
         if (getFileSize() == 0) {
             IntBuffer buffer = getWritableIntBuffer();
             buffer.put(UNSET);

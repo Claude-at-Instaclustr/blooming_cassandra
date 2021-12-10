@@ -4,7 +4,7 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.LongBuffer;
 import java.util.function.IntConsumer;
-import com.instaclustr.cassandra.bloom.idx.mem.tables.BusyTable.CloseableIteratorOfInt;
+
 import org.apache.commons.collections4.bloomfilter.BitMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -30,15 +30,18 @@ public class BufferTable extends AbstractTable implements AutoCloseable {
     // private final int filterBytes;
     public final int filterWords;
 
+
+    private static final int calcBlockSize(int numberOfBits) {
+        return BitMap.numberOfBitMaps(numberOfBits)*Long.BYTES;
+    }
     /**
      * The sizes for a singe bloom filter
      * @param numberOfBits
      * @param bufferFile
      * @throws IOException
      */
-
     public BufferTable(int numberOfBits, File bufferFile) throws IOException {
-        super(bufferFile);
+        super(bufferFile, calcBlockSize( numberOfBits));
 
         this.numberOfBits = numberOfBits;
 

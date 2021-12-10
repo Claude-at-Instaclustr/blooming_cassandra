@@ -2,7 +2,10 @@ package com.instaclustr.cassandra.bloom.idx.mem.tables;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.SyncFailedException;
+import java.nio.ByteBuffer;
 import java.nio.IntBuffer;
+import java.util.concurrent.TimeoutException;
 
 /**
  * Manages a file that contains the offset of the index into a key file.
@@ -10,69 +13,61 @@ import java.nio.IntBuffer;
  */
 public class IdxTable extends AbstractTable implements AutoCloseable {
 
-    private static final int ENTRY_SIZE = 3;
+    private static final int BLOCK_INTS = 3;
 
+    /**
+     * Package private so that other classes in this package can use it.
+     *
+     */
     class IdxEntry {
         IntBuffer buffer;
-        int position;
+        int block;
 
-        IdxEntry(IntBuffer buffer, int position) {
+        IdxEntry(IntBuffer buffer, int block) {
             this.buffer = buffer;
-            this.position = position;
+            this.block = block;
+        }
+
+        private void doPut( int blockOffset, int value) throws IOException {
+            final IntBuffer writeBuffer = getWritableIntBuffer();
+            final int startInt = (block*BLOCK_INTS)+blockOffset;
+            final int startByte = startInt * Integer.BYTES;
+            try {
+                sync( ()-> writeBuffer.put( startInt, value ), startByte, Integer.BYTES, 4 );
+            } catch (TimeoutException e) {
+                throw new IOException( e );
+            }
         }
 
         int getPos() {
-            return buffer.get(position);
+            return buffer.get(block*BLOCK_INTS);
         }
 
-        void setPos(int pos) {
-            buffer.put(position + 0, pos);
+
+        void setPos(int pos) throws IOException {
+            doPut( 0, pos );
         }
 
         int getLen() {
-            return buffer.get(position + 1);
+            return buffer.get(block*BLOCK_INTS + 1);
         }
 
-        void setLen(int len) {
-            buffer.put(position + 1, len);
+        void setLen(int len) throws IOException {
+            doPut( 1, len );
         }
 
         int getAlloc() {
-            return buffer.get(position + 3);
+            return buffer.get(block*BLOCK_INTS+2);
         }
 
-        void setAlloc(int alloc) {
-            buffer.put(position + 3, alloc);
+        void setAlloc(int alloc) throws IOException {
+            doPut( 2, alloc );
         }
     }
 
-    // /**
-    // * heaer structure
-    // * int blocksize
-    // * int flags
-    // */
-    // private static final int HEADER_SIZE = 2;
-    //
-    // private class Header {
-    // IntBuffer buffer;
-    // int getBlockSize() { return buffer.get(0); }
-    // int getFlags() { return buffer.get(1); }
-    // }
-
     public IdxTable(File bufferFile) throws IOException {
-        super(bufferFile);
-        // header = new Header();
-        // if (getFileSize()==0) {
-        // IntBuffer buffer = getWritableIntBuffer();
-        // buffer.put(0, blockSize);
-        // buffer.put(1, 0);
-        // } else {
-        // IntBuffer buffer = getIntBuffer();
-        // if (buffer.get(0) != blockSize ) {
-        // throw new IllegalArgumentException( String.format("IDX file already defiend
-        // with a block size of %s", buffer.get(0)));
-        // }
-        // }
+        super(bufferFile, BLOCK_INTS * Integer.BYTES );
+
     }
 
     @Override
@@ -80,19 +75,12 @@ public class IdxTable extends AbstractTable implements AutoCloseable {
         return "IdxTable: " + super.toString();
     }
 
-    private int positionOf(int idx) {
-        return (idx * ENTRY_SIZE);
-    }
+    public IdxEntry get(int block) throws IOException {
+        IntBuffer buff = getIntBuffer();
+        // ensure we have enough space for the block
+        ensureBlock( block );
 
-    public IdxEntry get(int idx) throws IOException {
-        IntBuffer buff = getWritableIntBuffer();
-        int position = positionOf(idx);
-        if (position > buff.limit()) {
-            for (int i = 0; i < ENTRY_SIZE; i++) {
-                buff.put(position + i, 0);
-            }
-        }
-        return new IdxEntry(getIntBuffer(), positionOf(idx));
+        return new IdxEntry(buff, block);
     }
 
 }
