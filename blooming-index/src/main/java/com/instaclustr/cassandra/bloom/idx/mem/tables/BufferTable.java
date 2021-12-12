@@ -8,8 +8,8 @@ import java.util.Stack;
 public class BufferTable extends AbstractTable {
 
     public static final int UNSET = -1;
-    private final IdxMap idxTable;
-    private final BufferTableIdx keyTableIdx;
+    final IdxMap idxTable;
+    final BufferTableIdx keyTableIdx;
 
     @Override
     public void close() throws IOException {
@@ -25,9 +25,6 @@ public class BufferTable extends AbstractTable {
 
     public BufferTable(File file, int blockSize) throws IOException {
         super(file, blockSize);
-        if (getFileSize() == 0) {
-            ensureBlock(2);
-        }
         File idxFile = new File(file.getParentFile(), file.getName() + "_idx");
         idxTable = new IdxMap(idxFile);
         File keyIdxFile = new File(file.getParentFile(), file.getName() + "_keyidx");
@@ -35,8 +32,17 @@ public class BufferTable extends AbstractTable {
     }
 
     public ByteBuffer get(int idx) throws IOException {
+        if (! idxTable.hasBlock(idx)) {
+            return null;
+        }
         IdxMap.MapEntry mapEntry = idxTable.get(idx);
+        if (!mapEntry.isInitialized()) {
+            return null;
+        }
         BufferTableIdx.IdxEntry idxEntry = keyTableIdx.get(mapEntry.getKeyIdx());
+        if (idxEntry.isDeleted()) {
+            return null;
+        }
         ByteBuffer buff = getBuffer();
         int pos = idxEntry.getOffset();
         buff.position(pos);

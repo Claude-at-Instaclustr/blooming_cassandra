@@ -51,9 +51,10 @@ public class IdxMap extends AbstractTable implements AutoCloseable {
     }
 
     public MapEntry get(int idx) throws IOException {
-        ByteBuffer buff = getBuffer();
         // ensure we have enough space for the block
+
         ensureBlock(idx);
+        ByteBuffer buff = getBuffer();
         return new MapEntry(buff, idx);
     }
 

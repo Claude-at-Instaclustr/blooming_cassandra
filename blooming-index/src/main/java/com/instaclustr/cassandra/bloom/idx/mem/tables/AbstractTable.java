@@ -173,6 +173,9 @@ public abstract class AbstractTable implements AutoCloseable {
         return rangeLock;
     }
 
+    protected boolean hasBlock( int block ) throws IOException {
+        return (raFile.length() / blockSize) > block;
+    }
     /**
      * Creates a new writable buffer that in guaranteed to have at least the number of blocks specified.
      * @param blocks the minimum number of blocks.
