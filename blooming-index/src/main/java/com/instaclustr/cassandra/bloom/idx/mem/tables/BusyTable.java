@@ -2,9 +2,9 @@ package com.instaclustr.cassandra.bloom.idx.mem.tables;
 
 import java.io.File;
 import java.io.IOException;
-import java.io.SyncFailedException;
+import java.nio.ByteBuffer;
 import java.nio.LongBuffer;
-import java.util.concurrent.TimeoutException;
+import java.util.Iterator;
 import java.util.function.Supplier;
 
 import org.apache.commons.collections4.bloomfilter.BitMap;
@@ -32,6 +32,75 @@ public class BusyTable extends AbstractTable implements AutoCloseable {
         return "BusyTable: " + super.toString();
     }
 
+    private class IndexScanner implements Supplier<Boolean>, Iterator<Integer> {
+        private final int maxBlock;
+        private int block;
+        private long mask;
+        private long word;
+        private long check;
+        private int blockIdx;
+        private Integer next;
+
+        IndexScanner(int maxBlock) {
+            this.maxBlock = maxBlock;
+            this.block = 0;
+            this.next = null;
+        }
+
+        private boolean matches() {
+            return (check & mask) != 0;
+        }
+
+        public int getBlock() {
+            return block;
+        }
+
+        @Override
+        public Boolean get() {
+            if (hasNext() && matches()) {
+                writeBuffer.put(block, word | mask);
+                return true;
+            }
+            return false;
+        }
+
+        private boolean findMatch() {
+            while (block < maxBlock) {
+                this.word = writeBuffer.get(block);
+                this.check = word ^ ~0L; // convert all 0 to 1 and visa versa
+                while (blockIdx < Long.SIZE) {
+                    mask = BitMap.getLongBit(blockIdx);
+                    if (matches()) {
+                        return true;
+                    }
+                    blockIdx++;
+                }
+                block++;
+            }
+            return false;
+        }
+
+        @Override
+        public boolean hasNext() {
+            if (next == null) {
+                if (findMatch()) {
+                    next = Integer.valueOf((block * Long.SIZE) + blockIdx);
+                }
+            }
+            return next != null;
+        }
+
+        @Override
+        public Integer next() {
+            try {
+                return next;
+            } finally {
+                next = null;
+            }
+
+        }
+    }
+
     /**
      * Returns an unused index value.
      * Will locate deleted indexes and use them first.
@@ -40,65 +109,32 @@ public class BusyTable extends AbstractTable implements AutoCloseable {
      */
     public int newIndex() throws IOException {
 
-        int max = writeBuffer.limit();
-        // find the first clear bit
-        for (int count = 0; count < max; count++) {
-
-            long word = writeBuffer.get(count);
-            long check = word ^ ~0L; // convert all 0 to 1 and visa versa
-            long mask;
-
-            for (int idx = 0; idx < Long.SIZE; idx++) {
-                mask = BitMap.getLongBit(idx);
-                if ((check & mask) != 0) {
-                    // create a supplier to verify bit is still open before
-                    // overwriting it.
-                    int block = count;
-                    long msk = mask;
-                    Supplier<Boolean> supplier = new Supplier<Boolean>() {
-
-                        @Override
-                        public Boolean get() {
-                            long word = writeBuffer.get(block);
-                            long check = word ^ ~0L; // convert all 0 to 1 and visa versa
-                            if ((check & msk) != 0) {
-                                writeBuffer.put(block, word | msk);
-                                return true;
-                            }
-                            return false;
-                        }
-                    };
-
-                    try {
-                        if (sync(supplier, count*Long.BYTES, Long.BYTES, 4)) {
-                            return idx;
-                        }
-                    } catch (SyncFailedException | TimeoutException e) {
-                        logger.warn("newIndex failure: {}", e.getMessage());
-                    }
-                    // if we get here we just continue looking for the next open bit.
+        IndexScanner scanner = new IndexScanner(writeBuffer.limit());
+        while (scanner.hasNext()) {
+            try {
+                if (sync(scanner, scanner.getBlock() * Long.BYTES, Long.BYTES, 4)) {
+                    return scanner.next();
                 }
+            } catch (IOException e) {
+                logger.warn("newIndex failure: {}", e.getMessage());
+                // skip the entry
+                scanner.next();
             }
         }
-        writeBuffer = extendBuffer().asLongBuffer();
-
-        int idx = max * Long.SIZE;
-        writeBuffer.put(idx, 1l);
-        return idx;
+        // there is no old index so create a new one.
+        try (RangeLock lock = getLock(extendBuffer(), Long.BYTES, 4)) {
+            ByteBuffer buff = getWritableBuffer();
+            writeBuffer = buff.asLongBuffer();
+            buff.putLong(lock.getStart(), 1l);
+            return lock.getStart() * Byte.SIZE;
+        }
     }
 
     public void clear(int idx) throws IOException {
-        try {
+        int wordIdx = BitMap.getLongIndex(idx);
+        sync(() -> writeBuffer.put(wordIdx, writeBuffer.get(wordIdx) & ~BitMap.getLongBit(idx)), wordIdx * Long.BYTES,
+                Long.BYTES, 4);
 
-            int wordIdx = BitMap.getLongIndex(idx);
-            sync(() -> writeBuffer.put(wordIdx, writeBuffer.get(wordIdx) & ~BitMap.getLongBit(idx)),
-                    wordIdx*Long.BYTES,
-                    Long.BYTES,
-                    4);
-
-        } catch (TimeoutException e) {
-            throw new IOException(e);
-        }
     }
 
     public boolean isSet(int idx) throws IOException {

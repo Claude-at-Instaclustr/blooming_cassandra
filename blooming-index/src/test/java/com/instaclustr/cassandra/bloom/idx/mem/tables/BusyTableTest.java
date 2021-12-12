@@ -1,5 +1,6 @@
 package com.instaclustr.cassandra.bloom.idx.mem.tables;
 
+import static com.instaclustr.cassandra.bloom.idx.mem.tables.AbstractTableTestHelpers.assertNoLocks;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
@@ -76,6 +77,7 @@ public class BusyTableTest {
             assertEquals(0, fis.read());
             assertEquals(0x03, fis.read());
             assertEquals(0xFF, fis.read());
+            assertNoLocks(busy);
         }
     }
 
@@ -98,6 +100,7 @@ public class BusyTableTest {
             assertEquals(0, fis.read());
             assertEquals(0x03, fis.read());
             assertEquals(0xDF, fis.read());
+            assertNoLocks(busy);
         }
     }
 
@@ -111,6 +114,7 @@ public class BusyTableTest {
             busy.clear(5);
 
             assertEquals(5, busy.newIndex());
+            assertNoLocks(busy);
         }
     }
 
@@ -124,6 +128,7 @@ public class BusyTableTest {
             assertEquals(10, busy.cardinality());
             busy.clear(5);
             assertEquals(9, busy.cardinality());
+            assertNoLocks(busy);
         }
     }
 
@@ -137,6 +142,7 @@ public class BusyTableTest {
             assertTrue(busy.isSet(5));
             busy.clear(5);
             assertFalse(busy.isSet(5));
+            assertNoLocks(busy);
         }
     }
 
@@ -144,6 +150,7 @@ public class BusyTableTest {
     public void isSetNotWrittenTest() throws IOException {
         try (BusyTable busy = new BusyTable(file)) {
             assertFalse(busy.isSet(5));
+            assertNoLocks(busy);
         }
     }
 
@@ -257,7 +264,6 @@ public class BusyTableTest {
 
             List<Future<Boolean>> futures = new ArrayList<Future<Boolean>>();
             lst.forEach(b -> futures.add(executor.submit(b)));
-            // executor.invokeAll(lst);//, 10, TimeUnit.SECONDS);
             Thread.sleep(3000);
             lst.forEach(b -> b.running = false);
             boolean hasFailures = false;
@@ -284,6 +290,7 @@ public class BusyTableTest {
                 }
             }
             executor.shutdown();
+            assertNoLocks(busy);
             lst.forEach(b -> assertTrue(b.toString() + " did not run once", b.ranOnce));
             System.out.println( String.format( "%s threads executed on %s indexes", threadCount, indexes.size() ));
             assertTrue( "Did not test with lock collisions", indexes.size() > 40 );

@@ -9,7 +9,7 @@ import java.util.function.IntConsumer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.instaclustr.cassandra.bloom.idx.mem.tables.BufferTable;
+import com.instaclustr.cassandra.bloom.idx.mem.tables.BloomTable;
 import com.instaclustr.cassandra.bloom.idx.mem.tables.BusyTable;
 import com.instaclustr.cassandra.bloom.idx.std.BloomingIndexer;
 
@@ -31,11 +31,11 @@ public final class FlatBloofi implements AutoCloseable {
      * bit packed set of 64 flags, one for each entry.
      */
     private BusyTable busy;
-    private BufferTable buffer;
+    private BloomTable buffer;
 
     public FlatBloofi(File dataFile, File busyFile, int numberOfBits) throws IOException {
 
-        buffer = new BufferTable(numberOfBits, dataFile);
+        buffer = new BloomTable(numberOfBits, dataFile);
         try {
             busy = new BusyTable(busyFile);
         } catch (IOException e) {

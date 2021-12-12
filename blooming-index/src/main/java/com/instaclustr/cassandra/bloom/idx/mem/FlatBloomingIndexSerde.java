@@ -52,7 +52,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.instaclustr.cassandra.bloom.idx.mem.tables.AbstractTable;
-import com.instaclustr.cassandra.bloom.idx.mem.tables.KeyTable;
+import com.instaclustr.cassandra.bloom.idx.mem.tables.BufferTable;
 
 /**
  * Handles all IO to the index table.
@@ -63,12 +63,17 @@ public class FlatBloomingIndexSerde {
     public static final Logger logger = LoggerFactory.getLogger(FlatBloomingIndexSerde.class);
 
     /**
+     * We use this as the block size for the key buffer table.
+     */
+    private static final int AVERAGE_KEY_SIZE = 1024;
+
+    /**
      * The index table.
      */
     private final ColumnFamilyStore indexCfs;
 
     private final FlatBloofi flatBloofi;
-    private final KeyTable keyTable;
+    private final BufferTable keyTable;
 
     /**
      * Construct the BloomingIndex serializer/deserializer.
@@ -99,7 +104,7 @@ public class FlatBloomingIndexSerde {
         }
 
         try {
-            keyTable = new KeyTable(new File(dir, "key"));
+            keyTable = new BufferTable(new File(dir, "keys"), AVERAGE_KEY_SIZE );
         } catch (IOException e) {
             AbstractTable.closeQuietly(flatBloofi);
             throw new RuntimeException("Unable to crate keyTable", e);
@@ -236,7 +241,7 @@ public class FlatBloomingIndexSerde {
     public void delete(DecoratedKey rowKey, Clustering<?> clustering, DeletionTime deletedAt, WriteContext ctx) {
         logger.trace("Deleting {}", rowKey);
         int idx = read(deletedAt.localDeletionTime(), rowKey, clustering);
-        if (idx != KeyTable.UNSET) {
+        if (idx != BufferTable.UNSET) {
             try {
                 flatBloofi.delete(idx);
                 keyTable.delete(idx);
@@ -327,7 +332,7 @@ public class FlatBloomingIndexSerde {
                         .filter(readCommand.queryMemtableAndDisk(indexCfs, readExecutionController), nowInSec)) {
 
             if (!rowIter.hasNext()) {
-                return KeyTable.UNSET;
+                return BufferTable.UNSET;
             }
 
             int result = rowIter.next().clustering().bufferAt(0).asIntBuffer().get(0);

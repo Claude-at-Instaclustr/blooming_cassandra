@@ -2,126 +2,147 @@ package com.instaclustr.cassandra.bloom.idx.mem.tables;
 
 import java.io.File;
 import java.io.IOException;
-import java.nio.LongBuffer;
-import java.util.function.IntConsumer;
+import java.nio.ByteBuffer;
+import java.util.Stack;
 
-import org.apache.commons.collections4.bloomfilter.BitMap;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+public class BufferTable extends AbstractTable {
 
-public class BufferTable extends AbstractTable implements AutoCloseable {
+    public static final int UNSET = -1;
+    private final IdxMap idxTable;
+    private final BufferTableIdx keyTableIdx;
 
-    private static final Logger logger = LoggerFactory.getLogger(BufferTable.class);
-
-    /**
-     * The number of bits in the bloom filter.
-     */
-    private final int numberOfBits;
-
-    /**
-     * The sizes for a block (Long.SIZE) bloom filters
-     */
-    // private final int blockBytes;
-    private final int blockWords;
-
-    /**
-     * Sizes of a bloom filter
-     */
-    // private final int filterBytes;
-    public final int filterWords;
-
-
-    private static final int calcBlockSize(int numberOfBits) {
-        return BitMap.numberOfBitMaps(numberOfBits)*Long.BYTES;
-    }
-    /**
-     * The sizes for a singe bloom filter
-     * @param numberOfBits
-     * @param bufferFile
-     * @throws IOException
-     */
-    public BufferTable(int numberOfBits, File bufferFile) throws IOException {
-        super(bufferFile, calcBlockSize( numberOfBits));
-
-        this.numberOfBits = numberOfBits;
-
-        filterWords = BitMap.numberOfBitMaps(numberOfBits);
-        // filterBytes = filterWords * Long.BYTES;
-
-        blockWords = filterWords * Long.BYTES;
-        // blockBytes = filterBytes * Long.BYTES;
-
+    @Override
+    public void close() throws IOException {
+        closeQuietly(idxTable);
+        closeQuietly(keyTableIdx);
+        super.close();
     }
 
     @Override
     public String toString() {
-        return "BufferTable: " + super.toString();
+        return "KeyTable: " + super.toString();
     }
 
-    private LongBuffer positionBuffer(LongBuffer buffer, int idx) {
-        final int offset = BitMap.getLongIndex(idx) * blockWords;
-        buffer.position(offset).limit(offset + blockWords);
-        return buffer;
+    public BufferTable(File file, int blockSize) throws IOException {
+        super(file, blockSize);
+        if (getFileSize() == 0) {
+            ensureBlock(2);
+        }
+        File idxFile = new File(file.getParentFile(), file.getName() + "_idx");
+        idxTable = new IdxMap(idxFile);
+        File keyIdxFile = new File(file.getParentFile(), file.getName() + "_keyidx");
+        keyTableIdx = new BufferTableIdx(keyIdxFile);
+    }
+
+    public ByteBuffer get(int idx) throws IOException {
+        IdxMap.MapEntry mapEntry = idxTable.get(idx);
+        BufferTableIdx.IdxEntry idxEntry = keyTableIdx.get(mapEntry.getKeyIdx());
+        ByteBuffer buff = getBuffer();
+        int pos = idxEntry.getOffset();
+        buff.position(pos);
+        buff.limit(pos + idxEntry.getLen());
+        return buff;
     }
 
     /**
-     * Checks if the specified index bit is enabled in the array of bit bitmaps.
-     *
-     * If the bit specified by idx is not in the bitMap false is returned.
-     *
-     * @param bitMaps  The array of bit maps.
-     * @param idx the index of the bit to locate.
-     * @return {@code true} if the bit is enabled, {@code false} otherwise.
+     * Creates Adds a block to the buffer table.
+     * The returned IdxEntry is not initializes, so it is not visible in searches
+     * calling method should set the initialized state when ready.
+     * @param buff the buffer to add to the table.
+     * @return the IdxEntry for the buffer.
+     * @throws IOException
      */
-    public static boolean contains(LongBuffer bitMaps, int idx) {
-        return idx >= 0 && BitMap.getLongIndex(idx) < bitMaps.limit()
-                && (bitMaps.get(BitMap.getLongIndex(idx)) & BitMap.getLongBit(idx)) != 0;
+    private BufferTableIdx.IdxEntry add(ByteBuffer buff) throws IOException {
+        int length = buff.remaining();
+        int position = extendBytes(buff.remaining());
+        ByteBuffer writeBuffer = getWritableBuffer();
+        writeBuffer.position(position);
+        sync(() -> writeBuffer.put(buff), position, length, 4);
+        return keyTableIdx.addBlock(position, length);
     }
 
-    public void setBloomAt(int idx, LongBuffer bloomFilter) throws IOException {
-        // extract the proper block
-        LongBuffer block = positionBuffer(getWritableLongBuffer(), idx);
-        final long mask = BitMap.getLongBit(idx);
-
-        for (int k = 0; k < numberOfBits; k++) {
-            long blockData = block.get(k);
-            if (contains(bloomFilter, k)) {
-                blockData |= mask;
-            } else {
-                blockData &= ~mask;
-            }
-            block.put(k, blockData);
+    /**
+     * Set an existing index to the buffer data.
+     * @param keyIdxEntry
+     * @param buff
+     * @throws IOException
+     */
+    private void setKey(BufferTableIdx.IdxEntry keyIdxEntry, ByteBuffer buff) throws IOException {
+        Stack<Func> undo = new Stack<Func>();
+        try (RangeLock lock = keyIdxEntry.lock()) {
+            undo.add(() -> keyIdxEntry.setDeleted(true));
+            keyIdxEntry.setLen(buff.remaining());
+            ByteBuffer writeBuffer = getWritableBuffer();
+            writeBuffer.position(keyIdxEntry.getOffset());
+            sync(() -> writeBuffer.put(buff), keyIdxEntry.getOffset(), keyIdxEntry.getLen(), 4);
+            keyIdxEntry.setDeleted(false);
+        } catch (IOException e) {
+            execQuietly(undo);
+            throw e;
         }
     }
 
-    public void search(IntConsumer result, LongBuffer bloomFilter, BusyTable busy) throws IOException {
-        LongBuffer buffer = getLongBuffer();
+    private BufferTableIdx.IdxEntry createNewEntry(int idx, ByteBuffer buff) throws IOException {
+
+        Stack<Func> undo = new Stack<Func>();
+
+        BufferTableIdx.IdxEntry keyIdxEntry = null;
         try {
-            // Get file channel in read-only mode
-            int blockLimit = buffer.remaining() / blockWords;
-            for (int bockIdx = 0; bockIdx < blockLimit; bockIdx++) {
-
-                int offset = bockIdx * blockWords;
-                long w = ~0l;
-                try (CloseableIteratorOfInt iter = new CloseableIteratorOfInt(bloomFilter)) {
-                    while (iter.hasNext()) {
-                        w &= buffer.get(offset + iter.next());
-                    }
-                } catch (Exception shouldNotHappen) {
-                    logger.error("Error on close of iterator", shouldNotHappen);
-                }
-                while (w != 0) {
-                    long t = w & -w;
-                    int idx = Long.numberOfTrailingZeros(t) + (Long.SIZE * bockIdx);
-                    if (busy.isSet(idx)) {
-                        result.accept(idx);
-                    }
-                    w ^= t;
-                }
+            keyIdxEntry = keyTableIdx.search(buff.remaining());
+            final BufferTableIdx.IdxEntry deleteKey = keyIdxEntry;
+            undo.push(() -> {
+                deleteKey.setInitialized(true);
+                deleteKey.setDeleted(true);
+            });
+        } catch (IOException e1) {
+            // ignore an try to create a new one.
+        }
+        try {
+            if (keyIdxEntry == null) {
+                keyIdxEntry = add(buff);
+                final BufferTableIdx.IdxEntry deleteKey = keyIdxEntry;
+                undo.push(() -> {
+                    deleteKey.setInitialized(true);
+                    deleteKey.setDeleted(true);
+                });
+                idxTable.get(idx).setKeyIdx(keyIdxEntry.getBlock());
+                keyIdxEntry.setInitialized(true);
+            } else {
+                setKey(keyIdxEntry, buff);
             }
-        } finally {
-            buffer = null;
+            return keyIdxEntry;
+        } catch (IOException e) {
+            execQuietly(undo);
+            throw e;
+        }
+
+    }
+
+    public void set(int idx, ByteBuffer buff) throws IOException {
+        IdxMap.MapEntry mapEntry = idxTable.get(idx);
+        if (mapEntry.isInitialized()) {
+            // we are reusing the key so see if the buffer fits.
+            BufferTableIdx.IdxEntry keyIdxEntry = keyTableIdx.get(mapEntry.getKeyIdx());
+            if (keyIdxEntry.getAlloc() > buff.remaining()) {
+                setKey(keyIdxEntry, buff);
+            } else {
+                // buffer did not fit so we need a new one and we need to free the old one.
+                BufferTableIdx.IdxEntry newKeyIdxEntry = createNewEntry(idx, buff);
+                mapEntry.setKeyIdx(newKeyIdxEntry.getBlock());
+                keyIdxEntry.setDeleted(true);
+            }
+        } else {
+            // this is a new key so just write it.
+            BufferTableIdx.IdxEntry keyIdxEntry = createNewEntry(idx, buff);
+            mapEntry.setKeyIdx(keyIdxEntry.getBlock());
         }
     }
 
+    public void delete(int idx) throws IOException {
+        IdxMap.MapEntry mapEntry = idxTable.get(idx);
+        if (mapEntry.isInitialized()) {
+            BufferTableIdx.IdxEntry keyIdx = keyTableIdx.get(mapEntry.getKeyIdx());
+            keyIdx.setDeleted(true);
+        }
+    }
 }
