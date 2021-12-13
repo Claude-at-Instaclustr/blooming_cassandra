@@ -5,6 +5,7 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.Iterator;
 import java.util.NoSuchElementException;
+import java.util.concurrent.Callable;
 import java.util.function.IntPredicate;
 import java.util.function.Supplier;
 
@@ -15,7 +16,7 @@ import org.slf4j.LoggerFactory;
  * Manages a file that contains the offset of the index into a key file.
  *
  */
-public class BufferTableIdx extends AbstractTable implements AutoCloseable {
+public class BufferTableIdx extends BaseTable implements AutoCloseable {
 
     private static final Logger logger = LoggerFactory.getLogger(BufferTableIdx.class);
     /*
@@ -266,7 +267,7 @@ public class BufferTableIdx extends AbstractTable implements AutoCloseable {
         return new IdxEntry(getBuffer(), block);
     }
 
-    class Scanner implements Supplier<Boolean>, Iterator<IdxEntry> {
+    class Scanner implements Callable<Boolean>, Iterator<IdxEntry> {
 
         private final ByteBuffer buffer;
         private final int length;
@@ -327,7 +328,7 @@ public class BufferTableIdx extends AbstractTable implements AutoCloseable {
         }
 
         @Override
-        public Boolean get() {
+        public Boolean call() {
             if (hasNext() && isMatch(next)) {
                 try {
                     next.setDeleted(false);

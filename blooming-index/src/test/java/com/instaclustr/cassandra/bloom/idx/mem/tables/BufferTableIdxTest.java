@@ -5,7 +5,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
-import static com.instaclustr.cassandra.bloom.idx.mem.tables.AbstractTableTestHelpers.assertNoLocks;
+import static com.instaclustr.cassandra.bloom.idx.mem.tables.BaseTableTestHelpers.assertNoLocks;
 import java.io.File;
 import java.io.IOException;
 import org.apache.cassandra.io.util.FileUtils;

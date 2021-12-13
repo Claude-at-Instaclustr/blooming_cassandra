@@ -1,6 +1,6 @@
 package com.instaclustr.cassandra.bloom.idx.mem.tables;
 
-import static com.instaclustr.cassandra.bloom.idx.mem.tables.AbstractTableTestHelpers.assertNoLocks;
+import static com.instaclustr.cassandra.bloom.idx.mem.tables.BaseTableTestHelpers.assertNoLocks;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
@@ -44,7 +44,8 @@ public class BufferTableTest {
 
     @After
     public void teardown() {
-        FileUtils.delete(file);
+        FileUtils.deleteRecursive(dir);
+        dir.mkdirs();
     }
 
     private void checkLocks(BufferTable table) {

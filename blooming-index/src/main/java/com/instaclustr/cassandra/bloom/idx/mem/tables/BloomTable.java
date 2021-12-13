@@ -5,12 +5,13 @@ import java.io.IOException;
 import java.nio.LongBuffer;
 import java.util.function.IntConsumer;
 import java.util.function.Supplier;
+import java.lang.Void;
 
 import org.apache.commons.collections4.bloomfilter.BitMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class BloomTable extends AbstractTable implements AutoCloseable {
+public class BloomTable extends BaseTable implements AutoCloseable {
 
     private static final Logger logger = LoggerFactory.getLogger(BloomTable.class);
 
@@ -94,9 +95,9 @@ public class BloomTable extends AbstractTable implements AutoCloseable {
         LongBuffer block = positionBuffer(getWritableLongBuffer(), idx);
         final long mask = BitMap.getLongBit(idx);
 
-        final Supplier<Object> action = new Supplier<Object>() {
+        final Func action = new Func() {
             @Override
-            public Object get() {
+            public void call() {
                 for (int k = 0; k < numberOfBits; k++) {
                     long blockData = block.get(k);
                     if (contains(bloomFilter, k)) {
@@ -106,8 +107,9 @@ public class BloomTable extends AbstractTable implements AutoCloseable {
                     }
                     block.put(k, blockData);
                 }
-                return null;
+                //return null;
             }
+
         };
 
         sync(action, block.position() * Long.BYTES, block.limit() * Long.BYTES, 4);

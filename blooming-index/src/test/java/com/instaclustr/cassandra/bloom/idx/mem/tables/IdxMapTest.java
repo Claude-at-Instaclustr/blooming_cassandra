@@ -1,6 +1,6 @@
 package com.instaclustr.cassandra.bloom.idx.mem.tables;
 
-import static com.instaclustr.cassandra.bloom.idx.mem.tables.AbstractTableTestHelpers.assertNoLocks;
+import static com.instaclustr.cassandra.bloom.idx.mem.tables.BaseTableTestHelpers.assertNoLocks;
 import static org.junit.Assert.assertEquals;
 import java.io.File;
 import java.io.IOException;

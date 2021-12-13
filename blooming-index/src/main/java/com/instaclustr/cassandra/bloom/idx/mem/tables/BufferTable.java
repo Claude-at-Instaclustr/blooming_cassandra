@@ -5,7 +5,7 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.Stack;
 
-public class BufferTable extends AbstractTable {
+public class BufferTable extends BaseTable {
 
     public static final int UNSET = -1;
     final IdxMap idxTable;

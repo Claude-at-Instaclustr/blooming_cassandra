@@ -5,13 +5,14 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.LongBuffer;
 import java.util.Iterator;
+import java.util.concurrent.Callable;
 import java.util.function.Supplier;
 
 import org.apache.commons.collections4.bloomfilter.BitMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class BusyTable extends AbstractTable implements AutoCloseable {
+public class BusyTable extends BaseTable implements AutoCloseable {
     private static final Logger logger = LoggerFactory.getLogger(BusyTable.class);
 
     private LongBuffer writeBuffer;
@@ -32,7 +33,7 @@ public class BusyTable extends AbstractTable implements AutoCloseable {
         return "BusyTable: " + super.toString();
     }
 
-    private class IndexScanner implements Supplier<Boolean>, Iterator<Integer> {
+    private class IndexScanner implements Callable<Boolean>, Iterator<Integer> {
         private final int maxBlock;
         private int block;
         private long mask;
@@ -56,7 +57,7 @@ public class BusyTable extends AbstractTable implements AutoCloseable {
         }
 
         @Override
-        public Boolean get() {
+        public Boolean call() {
             if (hasNext() && matches()) {
                 writeBuffer.put(block, word | mask);
                 return true;

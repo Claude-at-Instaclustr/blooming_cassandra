@@ -51,7 +51,7 @@ import org.apache.cassandra.schema.TableMetadataRef;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.instaclustr.cassandra.bloom.idx.mem.tables.AbstractTable;
+import com.instaclustr.cassandra.bloom.idx.mem.tables.BaseTable;
 import com.instaclustr.cassandra.bloom.idx.mem.tables.BufferTable;
 
 /**
@@ -106,7 +106,7 @@ public class FlatBloomingIndexSerde {
         try {
             keyTable = new BufferTable(new File(dir, "keys"), AVERAGE_KEY_SIZE );
         } catch (IOException e) {
-            AbstractTable.closeQuietly(flatBloofi);
+            BaseTable.closeQuietly(flatBloofi);
             throw new RuntimeException("Unable to crate keyTable", e);
         }
 

@@ -8,7 +8,7 @@ import java.nio.ByteBuffer;
  * Table that maps the external index to the internal KeytableIndex
  *
  */
-public class IdxMap extends AbstractTable implements AutoCloseable {
+public class IdxMap extends BaseTable implements AutoCloseable {
 
     private static final int BLOCK_BYTES = 1 + Integer.BYTES;
 
