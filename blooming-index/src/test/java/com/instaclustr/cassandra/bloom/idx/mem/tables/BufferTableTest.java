@@ -50,59 +50,65 @@ public class BufferTableTest {
 
     private void checkLocks(BufferTable table) {
         assertNoLocks(table);
-        assertNoLocks(table.idxTable );
+        assertNoLocks(table.idxTable);
         assertNoLocks(table.keyTableIdx);
 
     }
+
     @Test
     public void setTest() throws IOException {
-        try (BufferTable table = new BufferTable( file, 1024)){
-            table.set( 1, ByteBuffer.wrap( "Hello World".getBytes() ));
-            table.set( 2, ByteBuffer.wrap( "Good bye Cruel World".getBytes()));
-            table.set( 3, ByteBuffer.wrap("Now is the time for all good people to come to the aid of their planet".getBytes()));
-            checkLocks( table );
+        try (BufferTable table = new BufferTable(file, 1024)) {
+            table.set(1, ByteBuffer.wrap("Hello World".getBytes()));
+            table.set(2, ByteBuffer.wrap("Good bye Cruel World".getBytes()));
+            table.set(3, ByteBuffer
+                    .wrap("Now is the time for all good people to come to the aid of their planet".getBytes()));
+            checkLocks(table);
         }
     }
 
     @Test
     public void testDelete() throws IOException {
-        try (BufferTable table = new BufferTable( file, 1024)){
-            table.set( 1, ByteBuffer.wrap( "Hello World".getBytes() ));
-            table.set( 2, ByteBuffer.wrap( "Good bye Cruel World".getBytes()));
-            table.set( 3, ByteBuffer.wrap("Now is the time for all good people to come to the aid of their planet".getBytes()));
+        try (BufferTable table = new BufferTable(file, 1024)) {
+            table.set(1, ByteBuffer.wrap("Hello World".getBytes()));
+            table.set(2, ByteBuffer.wrap("Good bye Cruel World".getBytes()));
+            table.set(3, ByteBuffer
+                    .wrap("Now is the time for all good people to come to the aid of their planet".getBytes()));
 
             table.delete(2);
 
             // external idx 2 points to internal key idx 1.
-            IdxEntry idxEntry = table.keyTableIdx.get( 1 );
-            assertTrue( idxEntry.isDeleted() );
-            assertTrue( idxEntry.isAvailable());
-            checkLocks( table );
+            IdxEntry idxEntry = table.keyTableIdx.get(1);
+            assertTrue(idxEntry.isDeleted());
+            assertTrue(idxEntry.isAvailable());
+            checkLocks(table);
         }
 
     }
 
     @Test
     public void testGet() throws IOException {
-        try (BufferTable table = new BufferTable( file, 1024)){
-            table.set( 1, ByteBuffer.wrap( "Hello World".getBytes() ));
-            table.set( 2, ByteBuffer.wrap( "Good bye Cruel World".getBytes()));
-            table.set( 3, ByteBuffer.wrap("Now is the time for all good people to come to the aid of their planet".getBytes()));
+        try (BufferTable table = new BufferTable(file, 1024)) {
+            table.set(1, ByteBuffer.wrap("Hello World".getBytes()));
+            table.set(2, ByteBuffer.wrap("Good bye Cruel World".getBytes()));
+            table.set(3, ByteBuffer
+                    .wrap("Now is the time for all good people to come to the aid of their planet".getBytes()));
 
             table.delete(2);
 
             ByteBuffer result = table.get(1);
-            assertEquals( ByteBuffer.wrap( "Hello World".getBytes() ), result );
+            assertEquals(ByteBuffer.wrap("Hello World".getBytes()), result);
 
             result = table.get(2);
-            assertNull( result );
+            assertNull(result);
 
             result = table.get(3);
-            assertEquals( ByteBuffer.wrap( "Now is the time for all good people to come to the aid of their planet".getBytes() ), result );
+            assertEquals(
+                    ByteBuffer
+                    .wrap("Now is the time for all good people to come to the aid of their planet".getBytes()),
+                    result);
 
-
-            assertNull( "before first should fail", table.get(0) );
-            assertNull( "after last should fail", table.get(500));
+            assertNull("before first should fail", table.get(0));
+            assertNull("after last should fail", table.get(500));
 
         }
 
@@ -110,37 +116,40 @@ public class BufferTableTest {
 
     @Test
     public void testReuseDeleted() throws IOException {
-        try (BufferTable table = new BufferTable( file, 1024)){
-            table.set( 1, ByteBuffer.wrap( "Hello World".getBytes() ));
-            table.set( 2, ByteBuffer.wrap( "Good bye Cruel World".getBytes()));
-            table.set( 3, ByteBuffer.wrap("Now is the time for all good people to come to the aid of their planet".getBytes()));
+        try (BufferTable table = new BufferTable(file, 1024)) {
+            table.set(1, ByteBuffer.wrap("Hello World".getBytes()));
+            table.set(2, ByteBuffer.wrap("Good bye Cruel World".getBytes()));
+            table.set(3, ByteBuffer
+                    .wrap("Now is the time for all good people to come to the aid of their planet".getBytes()));
 
             table.delete(2);
 
             // external idx 2 points to internal key idx 1.
-            IdxEntry idxEntry = table.keyTableIdx.get( 1 );
-            assertTrue( idxEntry.isDeleted() );
-            assertTrue( idxEntry.isAvailable());
+            IdxEntry idxEntry = table.keyTableIdx.get(1);
+            assertTrue(idxEntry.isDeleted());
+            assertTrue(idxEntry.isAvailable());
 
-            table.set( 2, ByteBuffer.wrap( "When in the course".getBytes()));
-            assertFalse( idxEntry.isDeleted() );
-            assertFalse( idxEntry.isAvailable());
-            assertEquals( 18, idxEntry.getLen());
-            assertEquals( 20, idxEntry.getAlloc());
+            table.set(2, ByteBuffer.wrap("When in the course".getBytes()));
+            assertFalse(idxEntry.isDeleted());
+            assertFalse(idxEntry.isAvailable());
+            assertEquals(18, idxEntry.getLen());
+            assertEquals(20, idxEntry.getAlloc());
 
             ByteBuffer result = table.get(1);
-            assertEquals( ByteBuffer.wrap( "Hello World".getBytes() ), result );
+            assertEquals(ByteBuffer.wrap("Hello World".getBytes()), result);
 
             result = table.get(2);
-            assertEquals( ByteBuffer.wrap( "When in the course".getBytes() ), result );
+            assertEquals(ByteBuffer.wrap("When in the course".getBytes()), result);
 
             result = table.get(3);
-            assertEquals( ByteBuffer.wrap( "Now is the time for all good people to come to the aid of their planet".getBytes() ), result );
+            assertEquals(
+                    ByteBuffer
+                    .wrap("Now is the time for all good people to come to the aid of their planet".getBytes()),
+                    result);
 
-            checkLocks( table );
+            checkLocks(table);
         }
 
     }
-
 
 }

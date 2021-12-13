@@ -45,7 +45,6 @@ public class BufferTableIdxTest {
         FileUtils.delete(file);
     }
 
-
     @Test
     public void getTest() throws IOException {
         try (BufferTableIdx idxTable = new BufferTableIdx(file)) {

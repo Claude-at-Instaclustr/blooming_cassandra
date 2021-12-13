@@ -4,9 +4,6 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.LongBuffer;
 import java.util.function.IntConsumer;
-import java.util.function.Supplier;
-import java.lang.Void;
-
 import org.apache.commons.collections4.bloomfilter.BitMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -107,7 +104,7 @@ public class BloomTable extends BaseTable implements AutoCloseable {
                     }
                     block.put(k, blockData);
                 }
-                //return null;
+                // return null;
             }
 
         };

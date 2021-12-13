@@ -1,173 +1,274 @@
 package com.instaclustr.cassandra.bloom.idx.mem.tables;
 
-import static com.instaclustr.cassandra.bloom.idx.mem.tables.BaseTableTestHelpers.assertNoLocks;
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
-
+import static org.awaitility.Awaitility.*;
+import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
-import java.util.function.IntConsumer;
-
+import static java.util.concurrent.TimeUnit.*;
+import org.apache.cassandra.io.util.FileUtils;
+import org.junit.After;
+import org.junit.Before;
+import org.junit.BeforeClass;
 import org.junit.Test;
+
+import com.google.common.io.Files;
+import com.instaclustr.cassandra.bloom.idx.mem.tables.BaseTable.Func;
+import com.instaclustr.cassandra.bloom.idx.mem.tables.BaseTable.OutputTimeoutException;
+import com.instaclustr.cassandra.bloom.idx.mem.tables.BaseTable.RangeLock;
 
 public class MultiThreadedTests {
 
+    private static File dir;
+    private File file;
+    private ExecutorService executor;
+
     public MultiThreadedTests() {
-        // TODO Auto-generated constructor stub
+        executor = Executors.newFixedThreadPool(3);
     }
 
-    // base for test callables
-    abstract class B implements Callable<Boolean> {
-        public boolean running = true;
-        final BusyTable busy;
-        final ExecutorService executor;
-        boolean ranOnce = false;
-        int idx;
-        Callable<Boolean> isSet=new Callable<Boolean>(){@Override public Boolean call()throws IOException{return busy.isSet(idx);}};
-        private final int id;
-
-        B(int id, BusyTable busy, ExecutorService executor) {
-            this.id = id;
-            this.busy = busy;
-            this.executor = executor;
-        }
-
-        @Override
-        public String toString() {
-            return this.getClass().getSimpleName() + "-" + id;
-        }
+    @BeforeClass
+    public static void beforeClass() {
+        dir = Files.createTempDir();
     }
 
-    // reader callable
-    class R extends B {
-        public boolean status;
-
-        R(int id, BusyTable busy, ExecutorService executor, int pos) {
-            super( id, busy, executor );
-            this.idx = pos;
-        }
-
-        @Override
-        public Boolean call() {
-            try {
-                while (running) {
-                    status = executor.submit(isSet).get(1, TimeUnit.SECONDS);
-                    while (running && (status == executor.submit(isSet).get(1, TimeUnit.SECONDS))) {
-                        ranOnce = true;
-                        Thread.yield();
-                    }
-                }
-            } catch (InterruptedException | ExecutionException | TimeoutException e) {
-                System.out.println( String.format("%s watching position %s has %s", this, idx, e));
-                e.printStackTrace();
-                fail();
-            }
-            return ranOnce;
-        }
+    public static void afterClass() {
+        FileUtils.deleteRecursive(dir);
     }
 
-    // writer callable
-    class W extends B {
+    @Before
+    public void setup() {
+        file = new File(dir, "BaseTable");
+    }
 
-        int loops;
-        IntConsumer consumer;
-
-        Callable<Object> clear=new Callable<Object>(){@Override public Object call()throws IOException{busy.clear(idx);return"";}};
-
-        W(int id, BusyTable busy, ExecutorService executor, int loops, IntConsumer consumer) {
-            super( id, busy, executor );
-            this.loops = loops;
-            this.consumer = consumer;
-        }
-
-        @Override
-        public Boolean call() {
-            while (loops > 0) {
-                try {
-                    idx = executor.submit(busy::newIndex).get(1, TimeUnit.SECONDS);
-                    consumer.accept(idx);
-                    Thread.sleep(40);
-                    // since we created the idx nobody else should be able to disable it
-                    if (! busy.isSet(idx)) {
-                        System.out.println( String.format("%s idx %s was reset while we held it", this, idx));
-                        fail();
-                    }
-
-                    executor.submit(clear).get(1, TimeUnit.SECONDS);
-                    Thread.sleep(40);
-                    ranOnce = true;
-                    loops--;
-                } catch (TimeoutException | InterruptedException | ExecutionException | IOException e) {
-                    System.out.println( String.format("%s exception writing: %s", this, e));
-                    e.printStackTrace();
-                    fail();
-                }
-            }
-            return ranOnce;
-
-        }
-
+    @After
+    public void teardown() {
+        FileUtils.delete(file);
     }
 
     @Test
-    public void multiThreadedTest() throws Exception {
-        int threadCount = 50;
-        ExecutorService executor = Executors.newCachedThreadPool();
-        Set<Integer> indexes = new HashSet<Integer>();
+    public void getRangeLockTest() throws IOException, InterruptedException {
+        List<Integer> lst = new ArrayList<Integer>();
+        try (BaseTable table = new BaseTable(file, 5)) {
+            table.getLockedBlocks(lst::add);
+            assertEquals(0, lst.size());
+            lst.clear();
 
-        try (BusyTable busy = new BusyTable(file)) {
+            Callable<Boolean> getLock = new Callable<Boolean>() {
 
-            List<B> lst = new ArrayList<B>();
-            lst.add(new R(1,busy, executor, 5));
-            lst.add(new R(2,busy, executor, 6));
-            for (int i = 0; i < threadCount; i++) {
-                lst.add(new W(i+1,busy, executor, 5, indexes::add));
+                @Override
+                public Boolean call() throws Exception {
+                    try (RangeLock rangeLock = table.getLock(0, 5, 1)) {
+                        return rangeLock.hasLock();
+                    }
+                }
+            };
+
+            // nested locks work
+            try (RangeLock rangeLock = table.getLock(0, 5, 1)) {
+                assertTrue(rangeLock.hasLock());
+                RangeLock rl2 = table.getLock(0, 5, 1);
+                assertTrue(rl2.hasLock());
+                rl2.close();
+
+                table.getLockedBlocks(lst::add);
+                assertEquals(1, lst.size());
             }
 
-            List<Future<Boolean>> futures = new ArrayList<Future<Boolean>>();
-            lst.forEach(b -> futures.add(executor.submit(b)));
-            Thread.sleep(3000);
-            lst.forEach(b -> b.running = false);
-            boolean hasFailures = false;
-            for (int i=0;i<futures.size();i++) {
-                Future<Boolean> f = futures.get(i);
+            // non nested locs do not
+            try (RangeLock rangeLock = table.getLock(0, 5, 1)) {
                 try {
-                    if (f.isDone()) {
-                        if (f.isCancelled()) {
-                            System.out.println( String.format(" %s cancelled", lst.get(i) ));
-                            hasFailures=true;
-                        } else {
-                            if (!f.get()) {
-                                System.out.println(String.format(" %s failed", lst.get(i) ));
-                                hasFailures = true;
-                            }
-                        }
-                    } else {
-                        assertTrue(f.get(5, TimeUnit.SECONDS));
-                    }
-
-                } catch (InterruptedException | ExecutionException |TimeoutException e) {
-                    hasFailures = true;
-                    System.out.println( String.format(" %s exception: %s", lst.get(i), e ));
+                    executor.submit(getLock).get();
+                    fail("Should have thrown execption");
+                } catch (ExecutionException e) {
+                    assertEquals(OutputTimeoutException.class, e.getCause().getClass());
                 }
             }
-            executor.shutdown();
-            assertNoLocks(busy);
-            lst.forEach(b -> assertTrue(b.toString() + " did not run once", b.ranOnce));
-            System.out.println( String.format( "%s threads executed on %s indexes", threadCount, indexes.size() ));
-            assertTrue( "Did not test with lock collisions", indexes.size() > 40 );
-            assertFalse( "Failues listed in console", hasFailures);
+
+            // lock after release works.
+            try {
+                assertTrue(executor.submit(getLock).get());
+            } catch (InterruptedException | ExecutionException e) {
+                fail("Should not have thrown exception");
+            }
         }
+    }
+
+    @Test
+    public void getRangeLockOverlappingTest() throws IOException, InterruptedException {
+        List<Integer> lst = new ArrayList<Integer>();
+        try (BaseTable table = new BaseTable(file, 5)) {
+            table.getLockedBlocks(lst::add);
+            assertEquals(0, lst.size());
+            lst.clear();
+
+            Callable<Boolean> getLock = new Callable<Boolean>() {
+
+                @Override
+                public Boolean call() throws Exception {
+                    try (RangeLock rangeLock = table.getLock(5, 10, 1)) {
+                        return rangeLock.hasLock();
+                    }
+                }
+            };
+
+            // nested locks work
+            try (RangeLock rangeLock = table.getLock(0, 10, 1)) {
+                assertTrue(rangeLock.hasLock());
+                RangeLock rl2 = table.getLock(5, 10, 1);
+                assertTrue(rl2.hasLock());
+                rl2.close();
+
+                table.getLockedBlocks(lst::add);
+                assertEquals(2, lst.size());
+            }
+
+            // non nested locs do not
+            try (RangeLock rangeLock = table.getLock(0, 10, 1)) {
+                try {
+                    executor.submit(getLock).get();
+                    fail("Should have thrown execption");
+                } catch (ExecutionException e) {
+                    assertEquals(OutputTimeoutException.class, e.getCause().getClass());
+                }
+            }
+
+            // lock after release works.
+            try {
+                assertTrue(executor.submit(getLock).get());
+            } catch (InterruptedException | ExecutionException e) {
+                fail("Should not have thrown exception");
+            }
+        }
+    }
+
+    @Test
+    public void getRangeLockAdjacentTest() throws IOException, InterruptedException {
+        List<Integer> lst = new ArrayList<Integer>();
+        try (BaseTable table = new BaseTable(file, 5)) {
+            table.getLockedBlocks(lst::add);
+            assertEquals(0, lst.size());
+            lst.clear();
+
+            Callable<Boolean> getLock = new Callable<Boolean>() {
+
+                @Override
+                public Boolean call() throws Exception {
+                    try (RangeLock rangeLock = table.getLock(5, 5, 1)) {
+                        return rangeLock.hasLock();
+                    }
+                }
+            };
+
+            // nested locks work
+            try (RangeLock rangeLock = table.getLock(0, 5, 1)) {
+                assertTrue(rangeLock.hasLock());
+                RangeLock rl2 = table.getLock(5, 5, 1);
+                assertTrue(rl2.hasLock());
+                rl2.close();
+
+                table.getLockedBlocks(lst::add);
+                assertEquals(1, lst.size());
+                assertEquals(2, table.getLockCount());
+            }
+
+            // non nested locks do work
+            try (RangeLock rangeLock = table.getLock(0, 5, 1)) {
+                try {
+                    assertTrue(executor.submit(getLock).get());
+                } catch (ExecutionException e) {
+                    fail("Should not have thrown exception");
+                }
+            }
+
+            // lock after release works.
+            Future<Boolean> future = executor.submit(getLock);
+            try {
+                assertTrue(executor.submit(getLock).get());
+            } catch (InterruptedException | ExecutionException e) {
+                fail("Should not have thrown exception");
+            }
+        }
+    }
+
+    @Test
+    public void syncTest() throws IOException {
+        class LockHolder implements Func {
+            boolean hold = true;
+            boolean running = false;
+
+            boolean isRunning() {
+                return running;
+            }
+
+            @Override
+            public void call() throws Exception {
+                running = true;
+                while (hold) {
+                    Thread.yield();
+                }
+                running = false;
+            }
+
+        }
+
+        try (BaseTable table = new BaseTable(file, 5)) {
+
+            class RunnableLockHolder implements Callable<Void> {
+                LockHolder lockHolder;
+                int count;
+
+                RunnableLockHolder(LockHolder lockHolder, int count) {
+                    this.lockHolder = lockHolder;
+                    this.count = count;
+                }
+
+                @Override
+                public Void call() throws Exception {
+                    table.sync(lockHolder, 0, 5, count);
+                    return null;
+                }
+
+            }
+
+            LockHolder one = new LockHolder();
+            LockHolder two = new LockHolder();
+
+            RunnableLockHolder rOne = new RunnableLockHolder(one, 0);
+            RunnableLockHolder rTwo = new RunnableLockHolder(two, 120); // one minute
+
+            Future<?> future1 = executor.submit(rOne);
+            Future<?> future2 = executor.submit(rTwo);
+
+            await("One not started").atMost(1, SECONDS).until(one::isRunning);
+
+            assertFalse(future1.isDone());
+            assertFalse(future2.isDone());
+            assertFalse(two.running);
+            one.hold = false;
+
+            await("Two not started").atMost(1, SECONDS).until(two::isRunning);
+
+            assertTrue(future1.isDone());
+            assertFalse(one.running);
+            assertFalse(future2.isDone());
+            two.hold = false;
+
+            await("Two not stopped").atMost(1, SECONDS).until(() -> {
+                return !two.running;
+            });
+
+            await("Two not done").atMost(1, SECONDS).until(future2::isDone);
+        }
+
     }
 }

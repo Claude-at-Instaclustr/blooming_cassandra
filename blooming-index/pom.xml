@@ -70,6 +70,18 @@
 			<artifactId>commons-cli</artifactId>
 			<scope>test</scope>
 		</dependency>
+
+		<dependency>
+			<groupId>org.awaitility</groupId>
+			<artifactId>awaitility</artifactId>
+			<scope>test</scope>
+		</dependency>
+
+		<dependency>
+			<groupId>org.hamcrest</groupId>
+			<artifactId>hamcrest-core</artifactId>
+			<scope>test</scope>
+		</dependency>
 	</dependencies>
 	<build>
 		<plugins>
@@ -137,7 +149,7 @@
 						<artifactItem>
 							<groupId>com.instaclustr.cassandra</groupId>
 							<artifactId>blooming-utils</artifactId>
-<!-- 							<version>${project.version}</version> -->
+							<!-- <version>${project.version}</version> -->
 							<type>jar</type>
 							<overWrite>true</overWrite>
 							<outputDirectory>${project.build.directory}/libs</outputDirectory>
@@ -145,11 +157,11 @@
 						<artifactItem>
 							<groupId>org.apache.commons</groupId>
 							<artifactId>commons-collections4</artifactId>
-<!-- 							<version>${commons-collections4-version}</version> -->
+							<!-- <version>${commons-collections4-version}</version> -->
 							<type>jar</type>
 							<overWrite>true</overWrite>
 							<outputDirectory>${project.build.directory}/libs</outputDirectory>
-							</artifactItem>
+						</artifactItem>
 					</artifactItems>
 					<outputDirectory>${project.build.directory}/libs</outputDirectory>
 					<overWriteIfNewer>true</overWriteIfNewer>

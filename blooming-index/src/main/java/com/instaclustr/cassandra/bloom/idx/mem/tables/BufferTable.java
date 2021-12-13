@@ -32,7 +32,7 @@ public class BufferTable extends BaseTable {
     }
 
     public ByteBuffer get(int idx) throws IOException {
-        if (! idxTable.hasBlock(idx)) {
+        if (!idxTable.hasBlock(idx)) {
             return null;
         }
         IdxMap.MapEntry mapEntry = idxTable.get(idx);

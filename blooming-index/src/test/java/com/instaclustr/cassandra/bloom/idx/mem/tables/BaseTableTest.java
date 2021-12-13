@@ -2,20 +2,15 @@ package com.instaclustr.cassandra.bloom.idx.mem.tables;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 import java.io.File;
 import java.io.IOException;
-import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.Callable;
-
 import org.apache.cassandra.io.util.FileUtils;
-import org.apache.commons.collections4.bloomfilter.Shape;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.BeforeClass;
@@ -23,8 +18,8 @@ import org.junit.Test;
 
 import com.google.common.io.Files;
 import com.instaclustr.cassandra.bloom.idx.mem.tables.BaseTable.Func;
-import com.instaclustr.cassandra.bloom.idx.mem.tables.BaseTable.OutputTimeoutException;
 import com.instaclustr.cassandra.bloom.idx.mem.tables.BaseTable.RangeLock;
+import com.instaclustr.cassandra.bloom.idx.mem.tables.BaseTable.SyncException;
 
 public class BaseTableTest {
 
@@ -45,7 +40,7 @@ public class BaseTableTest {
 
     @Before
     public void setup() {
-        file = new File(dir, "BufferTable");
+        file = new File(dir, "BaseTable");
     }
 
     @After
@@ -56,14 +51,14 @@ public class BaseTableTest {
     @Test
     public void ensureBlockTest() throws IOException {
         try (BaseTable table = new BaseTable(file, 5)) {
-            assertEquals( 0L , table.getFileSize());
+            assertEquals(0L, table.getFileSize());
             // ensure block 0 exists
-            table.ensureBlock( 0 );
-            assertEquals( 5L , table.getFileSize());
+            table.ensureBlock(0);
+            assertEquals(5L, table.getFileSize());
 
             // create a block after a gap
-            table.ensureBlock( 9 );
-            assertEquals( 50L , table.getFileSize());
+            table.ensureBlock(9);
+            assertEquals(50L, table.getFileSize());
         }
     }
 
@@ -71,18 +66,23 @@ public class BaseTableTest {
     public void execQuietlyTest() throws IOException {
         try (BaseTable table = new BaseTable(file, 5)) {
             try {
-                table.execQuietly( ()-> {throw new Exception( "Testing");});
-            } catch (Exception e ){
-                fail( "Should not have thrown Exception");
+                table.execQuietly(() -> {
+                    throw new Exception("Testing");
+                });
+            } catch (Exception e) {
+                fail("Should not have thrown Exception");
             }
             try {
-                table.execQuietly( ()-> {throw new RuntimeException( "Testing");});
-            } catch (RuntimeException e ){
-                fail( "Should not have thrown RuntimeException");
+                table.execQuietly(() -> {
+                    throw new RuntimeException("Testing");
+                });
+            } catch (RuntimeException e) {
+                fail("Should not have thrown RuntimeException");
             }
 
             final class X implements Func {
                 int value = 0;
+
                 @Override
                 public void call() throws Exception {
                     value += 5;
@@ -90,48 +90,49 @@ public class BaseTableTest {
 
             }
             X x = new X();
-            table.execQuietly( x );
-            assertEquals( 5, x.value );
+            table.execQuietly(x);
+            assertEquals(5, x.value);
         }
     }
 
     @Test
     public void extendBufferTest() throws IOException {
         try (BaseTable table = new BaseTable(file, 5)) {
-            assertEquals( 0L , table.getFileSize());
+            assertEquals(0L, table.getFileSize());
             table.extendBuffer();
-            assertEquals( 5L,  table.getFileSize());
+            assertEquals(5L, table.getFileSize());
             table.extendBuffer(9);
-            assertEquals( 50L,  table.getFileSize());
+            assertEquals(50L, table.getFileSize());
             assertThrows(IllegalArgumentException.class, () -> table.extendBuffer(-1));
 
         }
     }
-        @Test
-        public void extendBufferAfteFactionalAddWorks() throws IOException {
-            try (BaseTable table = new BaseTable(file, 5)) {
 
-             // fractional blocks do not increment the block count
-                table.extendBytes( 2 );
-                assertFalse( table.hasBlock(0));
-                assertEquals( 2L, table.getFileSize());
+    @Test
+    public void extendBufferAfteFactionalAddWorks() throws IOException {
+        try (BaseTable table = new BaseTable(file, 5)) {
+
+            // fractional blocks do not increment the block count
+            table.extendBytes(2);
+            assertFalse(table.hasBlock(0));
+            assertEquals(2L, table.getFileSize());
             // extending the buffer by a block
-                table.extendBuffer();
-                assertTrue( table.hasBlock(0));
-                // verify additional bytes still exist.
-                assertEquals( 7L, table.getFileSize());
+            table.extendBuffer();
+            assertTrue(table.hasBlock(0));
+            // verify additional bytes still exist.
+            assertEquals(7L, table.getFileSize());
 
-    }
         }
+    }
 
     @Test
     public void extendBytesTest() throws IOException {
         try (BaseTable table = new BaseTable(file, 5)) {
-            assertEquals( 0L , table.getFileSize());
-            table.extendBytes( 4 );
-            assertEquals( 4L,  table.getFileSize());
-            table.extendBytes( 9 );
-            assertEquals( 13L,  table.getFileSize());
+            assertEquals(0L, table.getFileSize());
+            table.extendBytes(4);
+            assertEquals(4L, table.getFileSize());
+            table.extendBytes(9);
+            assertEquals(13L, table.getFileSize());
             assertThrows(IllegalArgumentException.class, () -> table.extendBytes(-1));
         }
     }
@@ -140,34 +141,28 @@ public class BaseTableTest {
     public void getLockTest() throws IOException {
 
         try (BaseTable table = new BaseTable(file, 5)) {
-            RangeLock savedLock = null;
-            try (RangeLock rangeLock = table.getLock(0, 10, 1 )) {
-                assertNotNull( rangeLock );
-                assertEquals( 0, rangeLock.getStart());
-                assertTrue( rangeLock.hasLock() );
-               assertEquals( 2, rangeLock.lockCount() );
+            try (RangeLock rangeLock = table.getLock(0, 10, 1)) {
+                assertEquals(0, rangeLock.getStart());
+                assertTrue(rangeLock.hasLock());
+                assertEquals(2, rangeLock.lockCount());
             }
 
-
-            try (RangeLock rangeLock = table.getLock(1000, 10, 1 )) {
-                assertNotNull( rangeLock );
-                assertEquals( 1000, rangeLock.getStart());
-                assertTrue( rangeLock.hasLock() );
-                assertEquals( 2, rangeLock.lockCount() );
+            try (RangeLock rangeLock = table.getLock(1000, 10, 1)) {
+                assertEquals(1000, rangeLock.getStart());
+                assertTrue(rangeLock.hasLock());
+                assertEquals(2, rangeLock.lockCount());
             }
 
-            try (RangeLock rangeLock = table.getLock(0, 10, 0 )) {
-                assertNotNull( rangeLock );
-                assertEquals( 0, rangeLock.getStart());
-                assertTrue( rangeLock.hasLock() );
-                assertEquals( 2, rangeLock.lockCount() );
+            try (RangeLock rangeLock = table.getLock(0, 10, 0)) {
+                assertEquals(0, rangeLock.getStart());
+                assertTrue(rangeLock.hasLock());
+                assertEquals(2, rangeLock.lockCount());
             }
 
-
-            assertThrows(IllegalArgumentException.class, () ->  table.getLock(-1, 10, 1 ));
-            assertThrows(IllegalArgumentException.class, () -> table.getLock(0, -1, 1 ));
-            assertThrows(IllegalArgumentException.class, () -> table.getLock(0, 0,  1));
-            assertThrows(IllegalArgumentException.class, () -> table.getLock(0, 10,  -1));
+            assertThrows(IllegalArgumentException.class, () -> table.getLock(-1, 10, 1));
+            assertThrows(IllegalArgumentException.class, () -> table.getLock(0, -1, 1));
+            assertThrows(IllegalArgumentException.class, () -> table.getLock(0, 0, 1));
+            assertThrows(IllegalArgumentException.class, () -> table.getLock(0, 10, -1));
         }
     }
 
@@ -175,16 +170,16 @@ public class BaseTableTest {
     public void getLockCountTest() throws IOException {
 
         try (BaseTable table = new BaseTable(file, 5)) {
-            assertEquals( 0, table.getLockCount() );
+            assertEquals(0, table.getLockCount());
 
-            try (RangeLock rangeLock = table.getLock(0, 5, 1 )) {
-                assertEquals( 1, table.getLockCount() );
-                try (RangeLock rangeLock2 = table.getLock(5, 5, 1 )) {
-                    assertEquals( 2, table.getLockCount() );
+            try (RangeLock rangeLock = table.getLock(0, 5, 1)) {
+                assertEquals(1, table.getLockCount());
+                try (RangeLock rangeLock2 = table.getLock(5, 5, 1)) {
+                    assertEquals(2, table.getLockCount());
                 }
-                assertEquals( 2, table.getLockCount() );
+                assertEquals(2, table.getLockCount());
             }
-            assertEquals( 2, table.getLockCount() );
+            assertEquals(2, table.getLockCount());
         }
 
     }
@@ -193,24 +188,24 @@ public class BaseTableTest {
     public void getLockedBlocksTest() throws IOException {
         List<Integer> lst = new ArrayList<Integer>();
         try (BaseTable table = new BaseTable(file, 5)) {
-            table.getLockedBlocks( lst::add );
-            assertEquals( 0, lst.size() );
+            table.getLockedBlocks(lst::add);
+            assertEquals(0, lst.size());
             lst.clear();
-            try (RangeLock rangeLock = table.getLock(0, 5, 1 )) {
-                table.getLockedBlocks( lst::add );
-                assertEquals( 1, lst.size() );
+            try (RangeLock rangeLock = table.getLock(0, 5, 1)) {
+                table.getLockedBlocks(lst::add);
+                assertEquals(1, lst.size());
                 lst.clear();
-                try (RangeLock rangeLock2 = table.getLock(5, 5, 1 )) {
-                    table.getLockedBlocks( lst::add );
-                    assertEquals( 2, lst.size() );
+                try (RangeLock rangeLock2 = table.getLock(5, 5, 1)) {
+                    table.getLockedBlocks(lst::add);
+                    assertEquals(2, lst.size());
                     lst.clear();
                 }
-                table.getLockedBlocks( lst::add );
-                assertEquals( 1, lst.size() );
+                table.getLockedBlocks(lst::add);
+                assertEquals(1, lst.size());
                 lst.clear();
             }
-            table.getLockedBlocks( lst::add );
-            assertEquals( 0, lst.size() );
+            table.getLockedBlocks(lst::add);
+            assertEquals(0, lst.size());
             lst.clear();
 
         }
@@ -219,17 +214,17 @@ public class BaseTableTest {
     @Test
     public void hasBlockTest() throws IOException {
         try (BaseTable table = new BaseTable(file, 5)) {
-            assertFalse( table.hasBlock(0));
+            assertFalse(table.hasBlock(0));
             // verify looking didn't change things
-            assertFalse( table.hasBlock(0));
+            assertFalse(table.hasBlock(0));
 
-            table.ensureBlock( 0 );
-            assertTrue( table.hasBlock(0));
-            assertFalse( table.hasBlock(1));
+            table.ensureBlock(0);
+            assertTrue(table.hasBlock(0));
+            assertFalse(table.hasBlock(1));
 
             // show fractional blocks do not increment the block count
-            table.extendBytes( 2 );
-            assertFalse( table.hasBlock(1));
+            table.extendBytes(2);
+            assertFalse(table.hasBlock(1));
         }
     }
 
@@ -239,25 +234,28 @@ public class BaseTableTest {
 
         try (BaseTable table = new BaseTable(file, 5)) {
             // no locked buffers
-            assertEquals( 0, table.getLockCount() );
+            assertEquals(0, table.getLockCount());
 
-            table.sync( ()-> {table.getLockedBlocks( lst::add );return null;}, 0, 1, 0);
+            table.sync(() -> {
+                table.getLockedBlocks(lst::add);
+                return null;
+            }, 0, 1, 0);
 
             // we created one
-            assertEquals( 1, table.getLockCount() );
+            assertEquals(1, table.getLockCount());
 
             // it was active during the sync execution.
-            assertEquals( 1, lst.size() );
+            assertEquals(1, lst.size());
 
             // it is not active now.
             lst.clear();
-            table.getLockedBlocks( lst::add );
+            table.getLockedBlocks(lst::add);
 
             // show error propigation
-            assertThrows(IllegalArgumentException.class, () -> table.sync( ()-> {throw new IllegalArgumentException();}, 0, 1, 0));
+            assertThrows(SyncException.class, () -> table.sync(() -> {
+                throw new IllegalArgumentException();
+            }, 0, 1, 0));
         }
     }
-
-
 
 }

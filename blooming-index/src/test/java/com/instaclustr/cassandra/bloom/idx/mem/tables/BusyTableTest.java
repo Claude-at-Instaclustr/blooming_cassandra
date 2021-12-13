@@ -4,27 +4,9 @@ import static com.instaclustr.cassandra.bloom.idx.mem.tables.BaseTableTestHelper
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
-
-import java.io.BufferedInputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
-import java.io.ObjectInputStream;
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
-import java.util.concurrent.Callable;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Executor;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
-import java.util.function.IntConsumer;
-
 import org.apache.cassandra.io.util.FileUtils;
 import org.junit.After;
 import org.junit.Before;
@@ -32,7 +14,6 @@ import org.junit.BeforeClass;
 import org.junit.Test;
 
 import com.google.common.io.Files;
-import com.instaclustr.cassandra.bloom.idx.mem.tables.BusyTable;
 
 public class BusyTableTest {
 
@@ -68,15 +49,16 @@ public class BusyTableTest {
             for (int i = 0; i < 10; i++) {
                 assertEquals(i, busy.newIndex());
             }
-            FileInputStream fis = new FileInputStream(file);
-            assertEquals(0, fis.read());
-            assertEquals(0, fis.read());
-            assertEquals(0, fis.read());
-            assertEquals(0, fis.read());
-            assertEquals(0, fis.read());
-            assertEquals(0, fis.read());
-            assertEquals(0x03, fis.read());
-            assertEquals(0xFF, fis.read());
+            try (FileInputStream fis = new FileInputStream(file)) {
+                assertEquals(0, fis.read());
+                assertEquals(0, fis.read());
+                assertEquals(0, fis.read());
+                assertEquals(0, fis.read());
+                assertEquals(0, fis.read());
+                assertEquals(0, fis.read());
+                assertEquals(0x03, fis.read());
+                assertEquals(0xFF, fis.read());
+            }
             assertNoLocks(busy);
         }
     }
@@ -91,15 +73,16 @@ public class BusyTableTest {
 
             busy.clear(5);
 
-            FileInputStream fis = new FileInputStream(file);
-            assertEquals(0, fis.read());
-            assertEquals(0, fis.read());
-            assertEquals(0, fis.read());
-            assertEquals(0, fis.read());
-            assertEquals(0, fis.read());
-            assertEquals(0, fis.read());
-            assertEquals(0x03, fis.read());
-            assertEquals(0xDF, fis.read());
+            try (FileInputStream fis = new FileInputStream(file)) {
+                assertEquals(0, fis.read());
+                assertEquals(0, fis.read());
+                assertEquals(0, fis.read());
+                assertEquals(0, fis.read());
+                assertEquals(0, fis.read());
+                assertEquals(0, fis.read());
+                assertEquals(0x03, fis.read());
+                assertEquals(0xDF, fis.read());
+            }
             assertNoLocks(busy);
         }
     }
@@ -153,6 +136,5 @@ public class BusyTableTest {
             assertNoLocks(busy);
         }
     }
-
 
 }

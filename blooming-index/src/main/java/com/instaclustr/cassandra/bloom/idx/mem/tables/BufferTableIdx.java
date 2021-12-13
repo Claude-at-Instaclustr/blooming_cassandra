@@ -7,8 +7,6 @@ import java.util.Iterator;
 import java.util.NoSuchElementException;
 import java.util.concurrent.Callable;
 import java.util.function.IntPredicate;
-import java.util.function.Supplier;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -54,10 +52,10 @@ public class BufferTableIdx extends BaseTable implements AutoCloseable {
      */
     class IdxEntry {
         private final ByteBuffer buffer;
-//        /**
-//         * The block number for this entry
-//         */
-//        private int block;
+        // /**
+        // * The block number for this entry
+        // */
+        // private int block;
         /**
          * The byte offset into the file for this entry.
          */
@@ -70,8 +68,9 @@ public class BufferTableIdx extends BaseTable implements AutoCloseable {
 
         @Override
         public String toString() {
-            return String.format( "BufferTableIdx[ b:%s o:%s ]", getBlock(), offset );
+            return String.format("BufferTableIdx[ b:%s o:%s ]", getBlock(), offset);
         }
+
         /**
          * Gets the table block for this entry.
          * @return the table block for this entry.
@@ -115,7 +114,7 @@ public class BufferTableIdx extends BaseTable implements AutoCloseable {
          * @return true the state returned by the predicate.
          */
         private boolean checkFlag(IntPredicate predicate) {
-            return predicate.test(buffer.get( offset + FLAG_BYTE));
+            return predicate.test(buffer.get(offset + FLAG_BYTE));
         }
 
         /**
@@ -184,7 +183,7 @@ public class BufferTableIdx extends BaseTable implements AutoCloseable {
          * @return the offset in the data table for the buffer this index is for.
          */
         int getOffset() {
-            return buffer.getInt(offset+ OFFSET_BYTE );
+            return buffer.getInt(offset + OFFSET_BYTE);
         }
 
         /**
@@ -201,7 +200,7 @@ public class BufferTableIdx extends BaseTable implements AutoCloseable {
          * @return the length of the data table entry.
          */
         int getLen() {
-            return buffer.getInt( offset + LEN_BYTE);
+            return buffer.getInt(offset + LEN_BYTE);
         }
 
         /**
@@ -298,7 +297,7 @@ public class BufferTableIdx extends BaseTable implements AutoCloseable {
                         lastEntryBlock = entry.getBlock();
                         return true;
                     }
-                    entry.offset+=BLOCK_SIZE;
+                    entry.offset += BLOCK_SIZE;
                 }
             } catch (IOException e) {
                 logger.error("Scanning error", e);
@@ -318,7 +317,7 @@ public class BufferTableIdx extends BaseTable implements AutoCloseable {
         public IdxEntry next() {
             if (hasNext()) {
                 try {
-                return next;
+                    return next;
                 } finally {
                     next = null;
                 }

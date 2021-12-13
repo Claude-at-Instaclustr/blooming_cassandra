@@ -6,8 +6,6 @@ import java.nio.ByteBuffer;
 import java.nio.LongBuffer;
 import java.util.Iterator;
 import java.util.concurrent.Callable;
-import java.util.function.Supplier;
-
 import org.apache.commons.collections4.bloomfilter.BitMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

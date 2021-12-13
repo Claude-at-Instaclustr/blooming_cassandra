@@ -50,7 +50,7 @@ public class BaseTable implements AutoCloseable {
         public void run() {
             blockLocks.forEach((k, v) -> {
                 if (!(v.isLocked() || v.hasQueuedThreads())) {
-                    try (RangeLock lock = lock( k*blockSize, blockSize)) {
+                    try (RangeLock lock = lock(k * blockSize, blockSize)) {
                         if (lock.hasLock()) {
                             blockLocks.remove(k);
                         }
@@ -87,7 +87,7 @@ public class BaseTable implements AutoCloseable {
      * @See Callable
      */
     @FunctionalInterface
-    interface Func  {
+    interface Func {
 
         /**
          * Executes some code that can thrown an exception but does not return
@@ -134,8 +134,12 @@ public class BaseTable implements AutoCloseable {
      *
      * @param consumer The consumer to accept the block numbers.
      */
-    protected void getLockedBlocks( IntConsumer consumer ) {
-        blockLocks.forEach( (k,v) -> {if (v.isLocked()) { consumer.accept(k);}} );
+    protected void getLockedBlocks(IntConsumer consumer) {
+        blockLocks.forEach((k, v) -> {
+            if (v.isLocked()) {
+                consumer.accept(k);
+            }
+        });
     }
 
     @Override
@@ -170,7 +174,6 @@ public class BaseTable implements AutoCloseable {
         return fileChannel.map(mode, 0, size);
     }
 
-
     /**
      * Execute the action after locking the byte range.  it is expected that the action will
      * update the buffer.
@@ -193,7 +196,7 @@ public class BaseTable implements AutoCloseable {
             } catch (IOException e) {
                 throw e;
             } catch (Exception e) {
-                throw new SyncException( e );
+                throw new SyncException(e);
             }
         }
     }
@@ -212,7 +215,7 @@ public class BaseTable implements AutoCloseable {
      * @see #sync(Callable, int, int, int)
      */
     protected void sync(Func action, int startByte, int length, int retryCount) throws IOException {
-        sync( action.asCallable(), startByte, length, retryCount );
+        sync(action.asCallable(), startByte, length, retryCount);
     }
 
     /**
@@ -220,9 +223,9 @@ public class BaseTable implements AutoCloseable {
      * @param value the value to check
      * @param name the name of the parameter
      */
-    private void checkGEZero( long value, String name ) {
-        if (value <0) {
-            throw new IllegalArgumentException( String.format( "%s (%s) may not be less than zero (0)", name, value));
+    private void checkGEZero(long value, String name) {
+        if (value < 0) {
+            throw new IllegalArgumentException(String.format("%s (%s) may not be less than zero (0)", name, value));
         }
     }
 
@@ -231,11 +234,13 @@ public class BaseTable implements AutoCloseable {
      * @param value the value to check
      * @param name the name of the parameter
      */
-    private void checkGTZero( long count, String name ) {
-        if (count <=0) {
-            throw new IllegalArgumentException( String.format( "%s (%s) may not be less than or equal to zero (0)", name, count));
+    private void checkGTZero(long count, String name) {
+        if (count <= 0) {
+            throw new IllegalArgumentException(
+                    String.format("%s (%s) may not be less than or equal to zero (0)", name, count));
         }
     }
+
     /**
      * Get a range lock over the specified range.
      *
@@ -253,9 +258,9 @@ public class BaseTable implements AutoCloseable {
      * @throws IllegalArgumentException If {retryCount < 0}.
      */
     protected final RangeLock getLock(int startByte, int length, int retryCount) throws OutputTimeoutException {
-        checkGEZero( startByte, "startByte");
-        checkGTZero( length, "length" );
-        checkGEZero( retryCount, "retryCount");
+        checkGEZero(startByte, "startByte");
+        checkGTZero(length, "length");
+        checkGEZero(retryCount, "retryCount");
         int count = retryCount;
         do {
             RangeLock lock = lock(startByte, startByte + length - 1);
@@ -305,9 +310,10 @@ public class BaseTable implements AutoCloseable {
      * @return {@code true} if the block is in the table, false otherwise.
      * @throws IOException on IO error
      */
-    protected boolean hasBlock( int block ) throws IOException {
+    protected boolean hasBlock(int block) throws IOException {
         return (raFile.length() / blockSize) > block;
     }
+
     /**
      * Creates a new writable buffer that in guaranteed to have at least the number of blocks specified.
      * @param blocks the minimum number of blocks.
@@ -344,7 +350,7 @@ public class BaseTable implements AutoCloseable {
      * @throws IllegalArgumentException If {@code blocks < 0}.
      */
     protected synchronized final int extendBuffer(long blocks) throws IOException {
-        checkGEZero( blocks, "blocks");
+        checkGEZero(blocks, "blocks");
 
         FileChannel fileChannel = raFile.getChannel();
         // Get direct long buffer access using channel.map() operation
@@ -364,7 +370,7 @@ public class BaseTable implements AutoCloseable {
      * @throws IllegalArgumentException If {@code bytes < 0}.
      */
     protected synchronized final int extendBytes(int bytes) throws IOException {
-        checkGEZero( bytes, "bytes");
+        checkGEZero(bytes, "bytes");
 
         FileChannel fileChannel = raFile.getChannel();
         // Get direct long buffer access using channel.map() operation
@@ -446,7 +452,7 @@ public class BaseTable implements AutoCloseable {
      * @param caller the class calling this exec method.
      */
     private static void execQuietly(Func func, Class<?> caller) {
-        execQuietly( func.asCallable(), caller );
+        execQuietly(func.asCallable(), caller);
     }
 
     /**
@@ -457,12 +463,11 @@ public class BaseTable implements AutoCloseable {
      * @param caller the class calling this exec method.
      * @return the result of the Callable or @{code null} if an exception was thrown.
      */
-    private static <T> T execQuietly(Callable<T> fn, Class<?> caller ) {
+    private static <T> T execQuietly(Callable<T> fn, Class<?> caller) {
         try {
             return fn.call();
         } catch (Exception e) {
-            LoggerFactory.getLogger(caller)
-            .error(String.format("Exception thrown while executing quietly %s", e), e);
+            LoggerFactory.getLogger(caller).error(String.format("Exception thrown while executing quietly %s", e), e);
             return null;
         }
     }
@@ -494,7 +499,7 @@ public class BaseTable implements AutoCloseable {
      * @see Func
      */
     protected void execQuietly(Func fn) {
-        execQuietly( fn, this.getClass() );
+        execQuietly(fn, this.getClass());
     }
 
     /**
@@ -594,10 +599,11 @@ public class BaseTable implements AutoCloseable {
      */
     public static class OutputTimeoutException extends IOException {
 
+
         /**
          *
          */
-        private static final long serialVersionUID = 1L;
+        private static final long serialVersionUID = 6817824021982164976L;
 
         public OutputTimeoutException() {
             super();
@@ -625,6 +631,11 @@ public class BaseTable implements AutoCloseable {
      * @See {@link BaseTable#sync(Func, int, int, int)}
      */
     public static class SyncException extends IOException {
+
+        /**
+         *
+         */
+        private static final long serialVersionUID = 5619395355954428585L;
 
         /**
          * Constructor
