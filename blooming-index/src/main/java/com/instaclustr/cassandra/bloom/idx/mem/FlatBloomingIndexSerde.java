@@ -98,7 +98,7 @@ public class FlatBloomingIndexSerde {
                 baseCfs.getTracker().loadsstables);
 
         try {
-            flatBloofi = new FlatBloofi(new File(dir, "data"), new File(dir, "busy"), numberOfBits);
+            flatBloofi = new FlatBloofi(dir, numberOfBits);
         } catch (IOException e) {
             throw new RuntimeException("Unable to crate FlatBloofi", e);
         }
