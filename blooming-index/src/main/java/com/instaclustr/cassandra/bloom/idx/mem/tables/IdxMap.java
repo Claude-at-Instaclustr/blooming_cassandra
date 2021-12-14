@@ -58,7 +58,6 @@ public class IdxMap extends BaseTable implements AutoCloseable {
 
     public IdxMap(File bufferFile) throws IOException {
         super(bufferFile, BLOCK_BYTES);
-
     }
 
     @Override

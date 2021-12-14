@@ -19,45 +19,32 @@ package com.instaclustr.cassandra.bloom.idx.mem.tables;
 import java.io.File;
 import java.io.IOException;
 import java.nio.LongBuffer;
+import java.util.PrimitiveIterator;
 import java.util.function.IntConsumer;
 import org.apache.commons.collections4.bloomfilter.BitMap;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import com.instaclustr.cassandra.bloom.idx.mem.LongBufferBitMap;
 
-public class BloomTable extends BaseTable implements AutoCloseable {
-
-    private static final Logger logger = LoggerFactory.getLogger(BloomTable.class);
+/**
+ * This is the core of the Bloofi implementation.
+ *
+ * Each bit in the bloom filter is associated with a bit map indicating which
+ * indexed filters have that bit enabled.  There is one bit map for each bit in the
+ * shape of the filter being indexed.
+ */
+public class BloomTable extends BusyTable {
 
     /**
-     * The number of bits in the bloom filter.
+     * The number of bits in the Bloom filter.
      */
     private final int numberOfBits;
-
     /**
-     * The sizes for a block (Long.SIZE) bloom filters
+     * each buffer entry accounts for 64 entries in the index. each there is one
+     * long in each buffer entry for each bit in the bloom filter. each long is a
+     * bit packed set of 64 flags, one for each entry.
+     *
+     * bufferEntryLength is the number of bits in the buffer entry.
      */
-    // private final int blockBytes;
-    private final int blockWords;
-
-    /**
-     * Sizes of a bloom filter
-     */
-    // private final int filterBytes;
-    public final int filterWords;
-
-    /**
-     * Get the block size in bytes.
-     * @param numberOfBits the number of bits in the Bloom filter
-     * @return the block size fot this table.
-     */
-    private static final int calcBlockSize(int numberOfBits) {
-        // number of words * number of bytes in a long
-        // the buffer is the number of bits in the Bloom filter x the number of bits in
-        // a long.
-        // but we round the number of bits in the bloom filter up by calculating the
-        // word boundary.
-        return (BitMap.numberOfBitMaps(numberOfBits) * Long.BYTES) * Long.BYTES;
-    }
+    private final int bufferEntryLength;
 
     /**
      * The sizes for a singe bloom filter
@@ -65,87 +52,99 @@ public class BloomTable extends BaseTable implements AutoCloseable {
      * @param bufferFile
      * @throws IOException
      */
-    public BloomTable(int numberOfBits, File bufferFile) throws IOException {
-        super(bufferFile, calcBlockSize(numberOfBits));
-
+    public BloomTable(int numberOfBits, File file) throws IOException {
+        super(file);
         this.numberOfBits = numberOfBits;
+        this.bufferEntryLength = Long.SIZE * numberOfBits;
 
-        filterWords = BitMap.numberOfBitMaps(numberOfBits);
-        // filterBytes = filterWords * Long.BYTES;
-
-        blockWords = filterWords * Long.BYTES;
-        // blockBytes = filterBytes * Long.BYTES;
-
-    }
-
-    @Override
-    public String toString() {
-        return "BufferTable: " + super.toString();
-    }
-
-    private LongBuffer positionBuffer(LongBuffer buffer, int idx) {
-        final int offset = BitMap.getLongIndex(idx) * blockWords;
-        buffer.position(offset).limit(offset + blockWords);
-        return buffer;
     }
 
     /**
-     * Checks if the specified index bit is enabled in the array of bit bitmaps.
-     *
-     * If the bit specified by idx is not in the bitMap false is returned.
-     *
-     * @param bitMaps  The array of bit maps.
-     * @param idx the index of the bit to locate.
-     * @return {@code true} if the bit is enabled, {@code false} otherwise.
+     * Gets the byte position of the buffer entry containing idx.
+     * @param idx the index to look for.
+     * @return the byte position of the buffer entry containing idx.
      */
-    public static boolean contains(LongBuffer bitMaps, int idx) {
-        int longIndex = BitMap.getLongIndex(idx);
-        return idx >= 0 && longIndex < bitMaps.limit() && (bitMaps.get(longIndex) & BitMap.getLongBit(idx)) != 0;
+    private int getBufferOffset(int idx) {
+        return BitMap.getLongIndex(idx) * bufferEntryLength;
     }
 
+    /**
+     * Get the buffer positions for each bit in the buffer at idx.
+     * @param idx the Item that we are looking for.
+     * @param bit the bit [0,numberOfBit) that we are looking for.
+     * @return the array of buffer positions for idx.
+     */
+    private int getBufferIndex(int idx, int bit) {
+        // get the bufferEntry offset
+        return getBufferOffset(idx)
+                // + the position of the bit block
+                + (bit * Long.SIZE)
+                // + the index of the idx into the buffer
+                + idx; //
+    }
+
+    /**
+     * Gets the number of blocks necessary to contain idx.
+     * @param idx the index to contain.
+     * @return the number of blocks necessary to contain idx.
+     */
+    private int getNumberOfBlocks(int idx) {
+        return BitMap.numberOfBitMaps(idx + 1) * bufferEntryLength / getBlockSize();
+    }
+
+    /**
+     * Sets the bloom filter at the index position in the table.
+     * @param idx the index of the Bloom filter.
+     * @param bloomFilter the Bloom filter
+     * @throws IOException on Error
+     */
     public void setBloomAt(int idx, LongBuffer bloomFilter) throws IOException {
-        // extract the proper block
-        LongBuffer block = positionBuffer(getWritableLongBuffer(), idx);
-        final long mask = BitMap.getLongBit(idx);
+        ensureBlock(getNumberOfBlocks(idx));
 
-        final Func action = new Func() {
-            @Override
-            public void call() {
-                for (int k = 0; k < numberOfBits; k++) {
-                    long blockData = block.get(k);
-                    if (contains(bloomFilter, k)) {
-                        blockData |= mask;
-                    } else {
-                        blockData &= ~mask;
-                    }
-                    block.put(k, blockData);
-                }
-                // return null;
+        LongBufferBitMap bloomBitMap = new LongBufferBitMap(bloomFilter);
+        // for each enabled bit in the Bloom filter enable the idx bit in
+        // the associated mappedBits.
+        for (int i = 0; i < numberOfBits; i++) {
+            int bufferIdx = getBufferIndex(idx, i);
+            if (bloomBitMap.isSet(i)) {
+                set(bufferIdx);
+            } else {
+                clear(bufferIdx);
             }
-
-        };
-
-        sync(action, block.position() * Long.BYTES, block.limit() * Long.BYTES, 4);
+        }
     }
 
+    private int getNumberOfBufferEnties() throws IOException {
+        return (int) (getFileSize() / bufferEntryLength);
+    }
+
+    /**
+     * Search for the bloom filter in the table.
+     * @param result an IntConsumer that will accept the indexes of the found filters.
+     * @param bloomFilter the Bloom filter to search for.
+     * @param busy the Busy table associated with this Bloom table.
+     * @throws IOException on IO Error
+     */
     public void search(IntConsumer result, LongBuffer bloomFilter, BusyTable busy) throws IOException {
+        LongBufferBitMap bloomBitMap = new LongBufferBitMap(bloomFilter);
         LongBuffer buffer = getLongBuffer();
 
-        int blockLimit = buffer.remaining() / blockWords;
-        for (int bockIdx = 0; bockIdx < blockLimit; bockIdx++) {
-
-            int offset = bockIdx * blockWords;
-            long w = ~0l;
-            try (CloseableIteratorOfInt iter = new CloseableIteratorOfInt(bloomFilter)) {
-                while (iter.hasNext()) {
-                    w &= buffer.get(offset + iter.next());
-                }
-            } catch (Exception shouldNotHappen) {
-                logger.error("Error on close of iterator", shouldNotHappen);
+        int bufferEntryLimit = getNumberOfBufferEnties();
+        for (int bufferEntryIdx = 0; bufferEntryIdx < bufferEntryLimit; bufferEntryIdx++) {
+            // positions in longs.
+            int entryPosition = bufferEntryIdx * bufferEntryLength;
+            long w = ~0L;
+            PrimitiveIterator.OfInt wordInBufferEntry = bloomBitMap.indices(numberOfBits);
+            while (wordInBufferEntry.hasNext()) {
+                int iterPos = entryPosition + wordInBufferEntry.next();
+                long entry = buffer.get(iterPos);
+                System.out.println(entry);
+                w &= buffer.get(iterPos);
             }
+
             while (w != 0) {
                 long t = w & -w;
-                int idx = Long.numberOfTrailingZeros(t) + (Long.SIZE * bockIdx);
+                int idx = Long.numberOfTrailingZeros(t) + (Long.SIZE * bufferEntryIdx);
                 if (busy.isSet(idx)) {
                     result.accept(idx);
                 }
@@ -154,5 +153,4 @@ public class BloomTable extends BaseTable implements AutoCloseable {
         }
 
     }
-
 }

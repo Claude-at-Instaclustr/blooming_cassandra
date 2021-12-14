@@ -48,8 +48,8 @@ public class BufferTableIdxTest {
     @Test
     public void getTest() throws IOException {
         try (BufferTableIdx idxTable = new BufferTableIdx(file)) {
-            IdxEntry entry0 = idxTable.get(0);
-            IdxEntry entry1 = idxTable.get(1);
+            idxTable.get(0);
+            idxTable.get(1);
             assertNoLocks(idxTable);
         }
     }

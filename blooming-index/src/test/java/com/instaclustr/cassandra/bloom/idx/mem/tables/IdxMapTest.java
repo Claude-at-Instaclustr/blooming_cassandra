@@ -18,10 +18,6 @@ public class IdxMapTest {
     private static File dir;
     private File file;
 
-    public IdxMapTest() {
-        // TODO Auto-generated constructor stub
-    }
-
     @BeforeClass
     public static void beforeClass() {
         dir = Files.createTempDir();
@@ -44,8 +40,8 @@ public class IdxMapTest {
     @Test
     public void getTest() throws IOException {
         try (IdxMap idxMap = new IdxMap(file)) {
-            MapEntry entry0 = idxMap.get(0);
-            MapEntry entry1 = idxMap.get(1);
+            idxMap.get(0);
+            idxMap.get(1);
             assertNoLocks(idxMap);
         }
     }

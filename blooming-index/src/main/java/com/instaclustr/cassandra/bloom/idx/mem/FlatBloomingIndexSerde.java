@@ -104,7 +104,7 @@ public class FlatBloomingIndexSerde {
         }
 
         try {
-            keyTable = new BufferTable(new File(dir, "keys"), AVERAGE_KEY_SIZE );
+            keyTable = new BufferTable(new File(dir, "keys"), AVERAGE_KEY_SIZE);
         } catch (IOException e) {
             BaseTable.closeQuietly(flatBloofi);
             throw new RuntimeException("Unable to crate keyTable", e);
@@ -299,20 +299,22 @@ public class FlatBloomingIndexSerde {
         indexCfs.invalidate();
     }
 
-    //    /**
-    //     * Reads the index table for all entries with the IndexKey.
-    //     * @param indexKey the key to locate.
-    //     * @param nowInSec The time of the query.
-    //     * @param executionController the execution controller to use.
-    //     * @return the UnfilteredRowIterator containing all matching entries.
-    //     */
-    //    public int read(IndexKey indexKey, int nowInSec, ReadExecutionController executionController) {
-    //        TableMetadata indexMetadata = indexCfs.metadata();
-    //        DecoratedKey valueKey = getIndexKeyFor(indexKey.asKey());
-    //        return SinglePartitionReadCommand.fullPartitionRead(indexMetadata, nowInSec, valueKey)
-    //                .queryMemtableAndDisk(indexCfs, executionController.indexReadController());
+    // /**
+    // * Reads the index table for all entries with the IndexKey.
+    // * @param indexKey the key to locate.
+    // * @param nowInSec The time of the query.
+    // * @param executionController the execution controller to use.
+    // * @return the UnfilteredRowIterator containing all matching entries.
+    // */
+    // public int read(IndexKey indexKey, int nowInSec, ReadExecutionController
+    // executionController) {
+    // TableMetadata indexMetadata = indexCfs.metadata();
+    // DecoratedKey valueKey = getIndexKeyFor(indexKey.asKey());
+    // return SinglePartitionReadCommand.fullPartitionRead(indexMetadata, nowInSec,
+    // valueKey)
+    // .queryMemtableAndDisk(indexCfs, executionController.indexReadController());
     //
-    //    }
+    // }
 
     /**
      * Reads the index table for all entries with the IndexKey.

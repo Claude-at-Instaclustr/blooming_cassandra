@@ -191,7 +191,6 @@ public class MultiThreadedTests {
             }
 
             // lock after release works.
-            Future<Boolean> future = executor.submit(getLock);
             try {
                 assertTrue(executor.submit(getLock).get());
             } catch (InterruptedException | ExecutionException e) {

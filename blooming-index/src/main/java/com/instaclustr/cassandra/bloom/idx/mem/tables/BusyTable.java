@@ -33,6 +33,9 @@ public class BusyTable extends BaseTable implements AutoCloseable {
 
     public BusyTable(File busyFile) throws IOException {
         super(busyFile, Long.BYTES);
+        super.registerExtendNotification(() -> {
+            writeBuffer = getWritableLongBuffer();
+        });
         writeBuffer = getWritableLongBuffer();
     }
 
@@ -47,6 +50,11 @@ public class BusyTable extends BaseTable implements AutoCloseable {
         return "BusyTable: " + super.toString();
     }
 
+    /**
+     * Class to scan the busy table locating all the disabled (unused) indexes.
+     * The Callable implementation enables the bit current bit.  If there is no
+     * current bit the next bit is located.
+     */
     private class IndexScanner implements Callable<Boolean>, Iterator<Integer> {
         private final int maxBlock;
         private int block;
@@ -56,6 +64,10 @@ public class BusyTable extends BaseTable implements AutoCloseable {
         private int blockIdx;
         private Integer next;
 
+        /**
+         * Constructor.
+         * @param maxBlock the highest block to check.
+         */
         IndexScanner(int maxBlock) {
             this.maxBlock = maxBlock;
             this.block = 0;
@@ -66,6 +78,10 @@ public class BusyTable extends BaseTable implements AutoCloseable {
             return (check & mask) != 0;
         }
 
+        /**
+         * Get the block that the scanner is looking at.
+         * @return
+         */
         public int getBlock() {
             return block;
         }
@@ -139,20 +155,49 @@ public class BusyTable extends BaseTable implements AutoCloseable {
         // there is no old index so create a new one.
         try (RangeLock lock = getLock(extendBuffer(), Long.BYTES, 4)) {
             ByteBuffer buff = getWritableBuffer();
-            writeBuffer = buff.asLongBuffer();
+            // should be updated by extend notification writeBuffer = buff.asLongBuffer();
             buff.putLong(lock.getStart(), 1l);
             return lock.getStart() * Byte.SIZE;
         }
     }
 
+    /**
+     * Clears a set bit.
+     * @param idx the bit to set.
+     * @throws IOException on IOError
+     * @throws IndexOutOfBoundx exception if {@code idx<0}.
+     */
     public void clear(int idx) throws IOException {
+        BitMap.checkPositive(idx);
         int wordIdx = BitMap.getLongIndex(idx);
         sync(() -> writeBuffer.put(wordIdx, writeBuffer.get(wordIdx) & ~BitMap.getLongBit(idx)), wordIdx * Long.BYTES,
                 Long.BYTES, 4);
 
     }
 
+    /**
+     * Sets a bit.
+     * @param idx the bit to set.
+     * @throws IOException on IOError
+     * @throws IndexOutOfBoundx exception if {@code idx<0}.
+     */
+    public void set(int idx) throws IOException {
+        BitMap.checkPositive(idx);
+        int wordIdx = BitMap.getLongIndex(idx);
+        sync(() -> writeBuffer.put(wordIdx, writeBuffer.get(wordIdx) | BitMap.getLongBit(idx)), wordIdx * Long.BYTES,
+                Long.BYTES, 4);
+
+    }
+
+    /**
+     * Checks if a bit is set.
+     * @param idx the bit to check.
+     * @return {@code true } if the bit was set.
+     * @throws IOException on IOError
+     * @throws IndexOutOfBoundx exception if {@code idx<0}.
+     */
     public boolean isSet(int idx) throws IOException {
+        BitMap.checkPositive(idx);
         LongBuffer buff = getLongBuffer();
         try {
             int wordIdx = BitMap.getLongIndex(idx);
@@ -163,6 +208,11 @@ public class BusyTable extends BaseTable implements AutoCloseable {
         }
     }
 
+    /**
+     * Gets the cardinality of the table.
+     * @return the number of bits that are on.
+     * @throws IOException on IO error.
+     */
     public int cardinality() throws IOException {
         LongBuffer buff = getLongBuffer();
         int result = 0;

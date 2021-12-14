@@ -378,14 +378,14 @@ public class FlatBloomingIndex implements Index {
 
         try {
             WrappedIterator.create(update.iterator()).mapWith(r -> r.getCell(indexedColumn)).filterDrop(b -> b == null)
-            .mapWith(Cell::buffer).forEach(v -> {
-                if (v.remaining() >= FBUtilities.MAX_UNSIGNED_SHORT) {
-                    throw new InvalidRequestException(String.format(
-                            "Cannot index value of size %d for index %s on %s(%s) (maximum allowed size=%d)",
-                            v.remaining(), metadata.name, baseCfs.metadata, indexedColumn.name.toString(),
-                            FBUtilities.MAX_UNSIGNED_SHORT));
-                }
-            });
+                    .mapWith(Cell::buffer).forEach(v -> {
+                        if (v.remaining() >= FBUtilities.MAX_UNSIGNED_SHORT) {
+                            throw new InvalidRequestException(String.format(
+                                    "Cannot index value of size %d for index %s on %s(%s) (maximum allowed size=%d)",
+                                    v.remaining(), metadata.name, baseCfs.metadata, indexedColumn.name.toString(),
+                                    FBUtilities.MAX_UNSIGNED_SHORT));
+                        }
+                    });
         } catch (Exception e) {
             throw new InvalidRequestException(e.getMessage(), e);
         }
@@ -395,9 +395,8 @@ public class FlatBloomingIndex implements Index {
     public Indexer indexerFor(final DecoratedKey key, final RegularAndStaticColumns columns, final int nowInSec,
             final WriteContext ctx, final IndexTransaction.Type transactionType) {
         logger.debug("indexerFor");
-        return columns.contains(indexedColumn)
-                ? new FlatBloomingIndexer(serde, key, indexedColumn, nowInSec, ctx)
-                        : null;
+        return columns.contains(indexedColumn) ? new FlatBloomingIndexer(serde, key, indexedColumn, nowInSec, ctx)
+                : null;
     }
 
     /**

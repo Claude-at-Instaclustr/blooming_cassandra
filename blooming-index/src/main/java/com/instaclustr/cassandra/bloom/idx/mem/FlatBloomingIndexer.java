@@ -66,8 +66,8 @@ public class FlatBloomingIndexer implements Indexer {
      * @param nowInSec The time this operation was started.
      * @param ctx The context use for writing.
      */
-    public FlatBloomingIndexer(FlatBloomingIndexSerde serde, final DecoratedKey key,
-            final ColumnMetadata indexedColumn, final int nowInSec, final WriteContext ctx) {
+    public FlatBloomingIndexer(FlatBloomingIndexSerde serde, final DecoratedKey key, final ColumnMetadata indexedColumn,
+            final int nowInSec, final WriteContext ctx) {
         this.serde = serde;
         this.key = key;
         this.indexedColumn = indexedColumn;

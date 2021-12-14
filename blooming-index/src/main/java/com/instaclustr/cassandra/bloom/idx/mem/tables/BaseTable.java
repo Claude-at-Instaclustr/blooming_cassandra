@@ -31,6 +31,7 @@ import java.util.Map;
 import java.util.Stack;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -61,6 +62,7 @@ public class BaseTable implements AutoCloseable {
     private final int blockSize;
     private final Map<Integer, ReentrantLock> blockLocks = new ConcurrentHashMap<Integer, ReentrantLock>();
     private final ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor();
+    private final List<Func> extendNotify = new CopyOnWriteArrayList<Func>();
     protected final Runnable blockLogsCleanup = new Runnable() {
         @Override
         public void run() {
@@ -79,7 +81,7 @@ public class BaseTable implements AutoCloseable {
     /**
      * Constructor
      * @param file The file to use.
-     * @param blockSize the blocksize in bytes to extend the file by.
+     * @param blockSize the size of the block in the table.
      * @throws IOException on IO error.
      */
     public BaseTable(File file, int blockSize) throws IOException {
@@ -88,6 +90,10 @@ public class BaseTable implements AutoCloseable {
         this.raFile = new RandomAccessFile(file, "rw");
         this.blockSize = blockSize;
         this.executor.scheduleWithFixedDelay(blockLogsCleanup, 1000 * 5 * 50, 5, TimeUnit.MINUTES);
+    }
+
+    protected void registerExtendNotification(Func fn) {
+        extendNotify.add(fn);
     }
 
     /**
@@ -289,6 +295,14 @@ public class BaseTable implements AutoCloseable {
         throw new OutputTimeoutException("Unable to lock " + this);
     }
 
+    public long blockNumber(long byteCount) {
+        return byteCount / blockSize;
+    }
+
+    public int blockNumber(int byteCount) {
+        return byteCount / blockSize;
+    }
+
     /**
      * Calculates and locks blocks.
      * @param start the starting byte
@@ -297,8 +311,8 @@ public class BaseTable implements AutoCloseable {
      *  none of the locks.
      */
     private final synchronized RangeLock lock(int start, int stop) {
-        int blockStart = start / blockSize;
-        int blockStop = stop / blockSize;
+        int blockStart = blockNumber(start);
+        int blockStop = blockNumber(stop);
         RangeLock rangeLock = new RangeLock(start);
         for (int i = blockStart; i <= blockStop; i++) {
             ReentrantLock lock = blockLocks.get(i);
@@ -327,7 +341,7 @@ public class BaseTable implements AutoCloseable {
      * @throws IOException on IO error
      */
     protected boolean hasBlock(int block) throws IOException {
-        return (raFile.length() / blockSize) > block;
+        return blockNumber(raFile.length()) > block;
     }
 
     /**
@@ -337,7 +351,8 @@ public class BaseTable implements AutoCloseable {
      * @throws IOException on IO error.
      */
     protected final synchronized boolean ensureBlock(long blocks) throws IOException {
-        long fileBlocks = raFile.length() / blockSize;
+        long fileBlocks = blockNumber(raFile.length());
+        ;
         if (fileBlocks <= blocks) {
             extendBuffer(blocks + 1 - fileBlocks);
             return true;
@@ -370,10 +385,10 @@ public class BaseTable implements AutoCloseable {
 
         FileChannel fileChannel = raFile.getChannel();
         // Get direct long buffer access using channel.map() operation
-
         int result = (int) fileChannel.size();
         long size = fileChannel.size() + (blocks * blockSize);
         fileChannel.map(MapMode.READ_WRITE, 0, size);
+        extendNotify.forEach(f -> execQuietly(f));
         return result;
     }
 
@@ -398,7 +413,7 @@ public class BaseTable implements AutoCloseable {
     }
 
     /**
-     * Crates a new read only ByteBuffer.
+     * Creates a new read only ByteBuffer.
      * @return new ByteBuffer
      * @throws IOException on IOError
      */
@@ -458,6 +473,14 @@ public class BaseTable implements AutoCloseable {
      */
     public static void closeQuietly(AutoCloseable c) {
         execQuietly(() -> c.close(), BaseTable.class);
+    }
+
+    /**
+     * Closes an this instance and ignores any exceptions.
+     * Any exceptions are logged as errors.
+     */
+    public void closeQuietly() {
+        execQuietly(this::close);
     }
 
     /**
@@ -614,7 +637,6 @@ public class BaseTable implements AutoCloseable {
      *
      */
     public static class OutputTimeoutException extends IOException {
-
 
         /**
          *
