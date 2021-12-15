@@ -98,13 +98,15 @@ public class BusyTable extends BaseTable implements AutoCloseable {
         private boolean findMatch() {
             while (block < maxBlock) {
                 this.word = writeBuffer.get(block);
-                this.check = word ^ ~0L; // convert all 0 to 1 and visa versa
-                while (blockIdx < Long.SIZE) {
-                    mask = BitMap.getLongBit(blockIdx);
-                    if (matches()) {
-                        return true;
+                if (this.word != ~0L) {
+                    this.check = word ^ ~0L; // convert all 0 to 1 and visa versa
+                    while (blockIdx < Long.SIZE) {
+                        mask = BitMap.getLongBit(blockIdx);
+                        if (matches()) {
+                            return true;
+                        }
+                        blockIdx++;
                     }
-                    blockIdx++;
                 }
                 block++;
             }
