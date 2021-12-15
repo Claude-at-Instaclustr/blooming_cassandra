@@ -100,14 +100,14 @@ public class FlatBloomingIndexSerde {
         try {
             flatBloofi = new FlatBloofi(dir, numberOfBits);
         } catch (IOException e) {
-            throw new RuntimeException("Unable to crate FlatBloofi", e);
+            throw new RuntimeException("Unable to create FlatBloofi", e);
         }
 
         try {
             keyTable = new BufferTable(new File(dir, "keys"), AVERAGE_KEY_SIZE);
         } catch (IOException e) {
             BaseTable.closeQuietly(flatBloofi);
-            throw new RuntimeException("Unable to crate keyTable", e);
+            throw new RuntimeException("Unable to create keyTable", e);
         }
 
     }
