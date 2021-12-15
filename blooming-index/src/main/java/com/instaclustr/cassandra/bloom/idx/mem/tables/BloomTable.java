@@ -136,10 +136,7 @@ public class BloomTable extends BusyTable {
             long w = ~0L;
             PrimitiveIterator.OfInt wordInBufferEntry = bloomBitMap.indices(numberOfBits);
             while (wordInBufferEntry.hasNext()) {
-                int iterPos = entryPosition + wordInBufferEntry.next();
-                long entry = buffer.get(iterPos);
-                System.out.println(entry);
-                w &= buffer.get(iterPos);
+                w &= buffer.get(entryPosition + wordInBufferEntry.next());
             }
 
             while (w != 0) {

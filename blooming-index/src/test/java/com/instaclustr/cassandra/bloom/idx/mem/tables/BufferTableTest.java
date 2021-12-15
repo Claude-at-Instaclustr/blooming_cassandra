@@ -10,8 +10,9 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 
-import org.apache.cassandra.io.util.FileUtils;
+import org.apache.commons.io.FileUtils;
 import org.junit.After;
+import org.junit.AfterClass;
 import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -33,8 +34,9 @@ public class BufferTableTest {
         dir = Files.createTempDir();
     }
 
-    public static void afterClass() {
-        FileUtils.deleteRecursive(dir);
+    @AfterClass
+    public static void afterClass() throws IOException {
+        FileUtils.deleteDirectory(dir);
     }
 
     @Before
@@ -43,8 +45,8 @@ public class BufferTableTest {
     }
 
     @After
-    public void teardown() {
-        FileUtils.deleteRecursive(dir);
+    public void teardown() throws IOException {
+        FileUtils.deleteDirectory(dir);
         dir.mkdirs();
     }
 

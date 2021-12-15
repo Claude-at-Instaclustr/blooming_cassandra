@@ -9,10 +9,11 @@ import java.nio.LongBuffer;
 import java.util.ArrayList;
 import java.util.List;
 
-import org.apache.cassandra.io.util.FileUtils;
 import org.apache.commons.collections4.bloomfilter.BitMap;
 import org.apache.commons.collections4.bloomfilter.Shape;
+import org.apache.commons.io.FileUtils;
 import org.junit.After;
+import org.junit.AfterClass;
 import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -28,7 +29,6 @@ public class BloomTableTest {
     private BusyTable busyTable;
 
     public BloomTableTest() {
-        // TODO Auto-generated constructor stub
     }
 
     @BeforeClass
@@ -36,8 +36,9 @@ public class BloomTableTest {
         dir = Files.createTempDir();
     }
 
-    public static void afterClass() {
-        FileUtils.deleteRecursive(dir);
+    @AfterClass
+    public static void afterClass() throws IOException {
+        FileUtils.deleteDirectory(dir);
     }
 
     @Before
@@ -49,7 +50,7 @@ public class BloomTableTest {
     @After
     public void teardown() throws IOException {
         busyTable.close();
-        FileUtils.deleteRecursive(dir);
+        FileUtils.deleteDirectory(dir);
         dir.mkdirs();
     }
 

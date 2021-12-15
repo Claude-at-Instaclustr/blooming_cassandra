@@ -4,8 +4,10 @@ import static com.instaclustr.cassandra.bloom.idx.mem.tables.BaseTableTestHelper
 import static org.junit.Assert.assertEquals;
 import java.io.File;
 import java.io.IOException;
-import org.apache.cassandra.io.util.FileUtils;
+
+import org.apache.commons.io.FileUtils;
 import org.junit.After;
+import org.junit.AfterClass;
 import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -23,8 +25,9 @@ public class IdxMapTest {
         dir = Files.createTempDir();
     }
 
-    public static void afterClass() {
-        FileUtils.deleteRecursive(dir);
+    @AfterClass
+    public static void afterClass() throws IOException {
+        FileUtils.deleteDirectory(dir);
     }
 
     @Before
@@ -33,7 +36,7 @@ public class IdxMapTest {
     }
 
     @After
-    public void teardown() {
+    public void teardown() throws IOException {
         FileUtils.delete(file);
     }
 

@@ -9,9 +9,10 @@ import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
 
-import org.apache.cassandra.io.util.FileUtils;
 import org.apache.commons.collections4.bloomfilter.Shape;
+import org.apache.commons.io.FileUtils;
 import org.junit.After;
+import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
@@ -32,13 +33,14 @@ public class FlatBloofiTest {
         dir = Files.createTempDir();
     }
 
-    public static void afterClass() {
-        FileUtils.deleteRecursive(dir);
+    @AfterClass
+    public static void afterClass() throws IOException {
+        FileUtils.deleteDirectory(dir);
     }
 
     @After
-    public void teardown() {
-        FileUtils.deleteRecursive(dir);
+    public void teardown() throws IOException {
+        FileUtils.deleteDirectory(dir);
         dir.mkdirs();
     }
 
