@@ -70,14 +70,14 @@ public class BaseTableTest {
         try (BaseTable table = new BaseTable(file, 5)) {
             try {
                 table.execQuietly(() -> {
-                    throw new Exception("Testing");
+                    throw new Exception("execQuietlyTest This Exception is expected");
                 });
             } catch (Exception e) {
                 fail("Should not have thrown Exception");
             }
             try {
                 table.execQuietly(() -> {
-                    throw new RuntimeException("Testing");
+                    throw new RuntimeException("execQuietlyTest This Runtime Exception is expected");
                 });
             } catch (RuntimeException e) {
                 fail("Should not have thrown RuntimeException");
