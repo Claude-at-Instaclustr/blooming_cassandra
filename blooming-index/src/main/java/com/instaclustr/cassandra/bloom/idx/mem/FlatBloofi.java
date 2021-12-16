@@ -27,7 +27,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.instaclustr.cassandra.bloom.idx.mem.tables.BloomTable;
-import com.instaclustr.cassandra.bloom.idx.mem.tables.BusyTable;
+import com.instaclustr.cassandra.bloom.idx.mem.tables.BaseTable.Func;
+import com.instaclustr.cassandra.bloom.idx.mem.tables.BitTable;
 import com.instaclustr.cassandra.bloom.idx.std.BloomingIndexer;
 
 /**
@@ -42,7 +43,7 @@ public final class FlatBloofi implements AutoCloseable {
      * long in each buffer entry for each bit in the bloom filter. each long is a
      * bit packed set of 64 flags, one for each entry.
      */
-    private final BusyTable busy;
+    private final BitTable busy;
     private final BloomTable buffer;
     private final int numberOfBits;
 
@@ -50,9 +51,9 @@ public final class FlatBloofi implements AutoCloseable {
         this.numberOfBits = numberOfBits;
         buffer = new BloomTable(numberOfBits, new File(dir, "BloomTable"));
         try {
-            busy = new BusyTable(new File(dir, "BusyTable"));
+            busy = new BitTable(new File(dir, "BusyTable"));
         } catch (IOException e) {
-            buffer.closeQuietly();
+            BitTable.closeQuietly( buffer );
             throw e;
         }
     }
@@ -62,7 +63,7 @@ public final class FlatBloofi implements AutoCloseable {
         try {
             busy.close();
         } catch (IOException e) {
-            buffer.closeQuietly();
+            BitTable.closeQuietly(buffer);
             throw e;
         }
         buffer.close();

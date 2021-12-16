@@ -34,11 +34,6 @@ public class BufferTable extends BaseTable {
         super.close();
     }
 
-    @Override
-    public String toString() {
-        return "KeyTable: " + super.toString();
-    }
-
     public BufferTable(File file, int blockSize) throws IOException {
         super(file, blockSize);
         File idxFile = new File(file.getParentFile(), file.getName() + "_idx");

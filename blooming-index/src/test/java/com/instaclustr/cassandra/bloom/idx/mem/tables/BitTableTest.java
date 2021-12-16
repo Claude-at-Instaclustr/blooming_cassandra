@@ -17,12 +17,12 @@ import org.junit.Test;
 
 import com.google.common.io.Files;
 
-public class BusyTableTest {
+public class BitTableTest {
 
     private static File dir;
     private File file;
 
-    public BusyTableTest() {
+    public BitTableTest() {
         // TODO Auto-generated constructor stub
     }
 
@@ -48,7 +48,7 @@ public class BusyTableTest {
 
     @Test
     public void newIndexTest() throws IOException {
-        try (BusyTable busy = new BusyTable(file)) {
+        try (BitTable busy = new BitTable(file)) {
             for (int i = 0; i < 10; i++) {
                 assertEquals(i, busy.newIndex());
             }
@@ -68,7 +68,7 @@ public class BusyTableTest {
 
     @Test
     public void clearTest() throws IOException {
-        try (BusyTable busy = new BusyTable(file)) {
+        try (BitTable busy = new BitTable(file)) {
 
             for (int i = 0; i < 10; i++) {
                 assertEquals(i, busy.newIndex());
@@ -92,7 +92,7 @@ public class BusyTableTest {
 
     @Test
     public void reuseTest() throws IOException {
-        try (BusyTable busy = new BusyTable(file)) {
+        try (BitTable busy = new BitTable(file)) {
             for (int i = 0; i < 10; i++) {
                 assertEquals(i, busy.newIndex());
             }
@@ -106,7 +106,7 @@ public class BusyTableTest {
 
     @Test
     public void cardinalityTest() throws IOException {
-        try (BusyTable busy = new BusyTable(file)) {
+        try (BitTable busy = new BitTable(file)) {
             for (int i = 0; i < 10; i++) {
                 assertEquals(i, busy.newIndex());
             }
@@ -120,7 +120,7 @@ public class BusyTableTest {
 
     @Test
     public void isSetTest() throws IOException {
-        try (BusyTable busy = new BusyTable(file)) {
+        try (BitTable busy = new BitTable(file)) {
             for (int i = 0; i < 10; i++) {
                 assertEquals(i, busy.newIndex());
             }
@@ -134,7 +134,7 @@ public class BusyTableTest {
 
     @Test
     public void isSetNotWrittenTest() throws IOException {
-        try (BusyTable busy = new BusyTable(file)) {
+        try (BitTable busy = new BitTable(file)) {
             assertFalse(busy.isSet(5));
             assertNoLocks(busy);
         }
@@ -142,7 +142,7 @@ public class BusyTableTest {
 
     @Test
     public void boundaryCrossingTest() throws IOException {
-        try (BusyTable busy = new BusyTable(file)) {
+        try (BitTable busy = new BitTable(file)) {
             for (int i=0;i<Long.SIZE; i++)
             {
                 assertEquals( i, busy.newIndex() );

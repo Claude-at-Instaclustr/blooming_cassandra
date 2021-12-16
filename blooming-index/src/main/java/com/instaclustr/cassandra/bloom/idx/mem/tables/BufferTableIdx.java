@@ -266,11 +266,6 @@ public class BufferTableIdx extends BaseTable implements AutoCloseable {
 
     }
 
-    @Override
-    public String toString() {
-        return "KeyTableIdx: " + super.toString();
-    }
-
     /**
      * Gets the entry for the block from the file.
      * @param block the block number to retrieve.

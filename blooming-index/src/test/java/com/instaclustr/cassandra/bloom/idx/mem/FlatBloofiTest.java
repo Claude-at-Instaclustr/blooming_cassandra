@@ -20,13 +20,11 @@ import com.google.common.io.Files;
 
 public class FlatBloofiTest {
 
-
     private static File dir;
-    private static final Shape shape = Shape.Factory.fromNP( 10, 1.0/10 );
+    private static final Shape shape = Shape.Factory.fromNP(10, 1.0 / 10);
 
     public FlatBloofiTest() {
     }
-
 
     @BeforeClass
     public static void beforeClass() {
@@ -47,10 +45,10 @@ public class FlatBloofiTest {
     @Test
     public void addTest() throws IOException {
 
-        try (FlatBloofi bloofi = new FlatBloofi( dir, shape.getNumberOfBits() )) {
-            assertEquals( 0, bloofi.add( asByteBuffer( asHasher( "Hello World"), shape)) );
-            assertEquals( 1, bloofi.add( asByteBuffer( asHasher( "Good bye cruel World"), shape))) ;
-            assertEquals( 2, bloofi.add( asByteBuffer( asHasher( "Now is the time"), shape ))) ;
+        try (FlatBloofi bloofi = new FlatBloofi(dir, shape.getNumberOfBits())) {
+            assertEquals(0, bloofi.add(asByteBuffer(asHasher("Hello World"), shape)));
+            assertEquals(1, bloofi.add(asByteBuffer(asHasher("Good bye cruel World"), shape)));
+            assertEquals(2, bloofi.add(asByteBuffer(asHasher("Now is the time"), shape)));
         }
 
     }
@@ -58,83 +56,84 @@ public class FlatBloofiTest {
     @Test
     public void countTest() throws IOException {
 
-        try (FlatBloofi bloofi = new FlatBloofi( dir, shape.getNumberOfBits() )) {
-            assertEquals( 0, bloofi.count() );
-            bloofi.add( asByteBuffer( asHasher( "Hello World"), shape));
-            assertEquals( 1, bloofi.count() );
-            bloofi.add( asByteBuffer( asHasher( "Good bye cruel World"), shape));
-            assertEquals( 2, bloofi.count() );
-            bloofi.add( asByteBuffer( asHasher( "Now is the time"), shape )) ;
-            assertEquals( 3, bloofi.count() );
+        try (FlatBloofi bloofi = new FlatBloofi(dir, shape.getNumberOfBits())) {
+            assertEquals(0, bloofi.count());
+            bloofi.add(asByteBuffer(asHasher("Hello World"), shape));
+            assertEquals(1, bloofi.count());
+            bloofi.add(asByteBuffer(asHasher("Good bye cruel World"), shape));
+            assertEquals(2, bloofi.count());
+            bloofi.add(asByteBuffer(asHasher("Now is the time"), shape));
+            assertEquals(3, bloofi.count());
         }
     }
 
     @Test
     public void deleteTest() throws IOException {
 
-        try (FlatBloofi bloofi = new FlatBloofi( dir, shape.getNumberOfBits() )) {
-            assertEquals( 0, bloofi.add( asByteBuffer( asHasher( "Hello World"), shape)) );
-            assertEquals( 1, bloofi.add( asByteBuffer( asHasher( "Good bye cruel World"), shape))) ;
-            assertEquals( 2, bloofi.add( asByteBuffer( asHasher( "Now is the time"), shape ))) ;
+        try (FlatBloofi bloofi = new FlatBloofi(dir, shape.getNumberOfBits())) {
+            assertEquals(0, bloofi.add(asByteBuffer(asHasher("Hello World"), shape)));
+            assertEquals(1, bloofi.add(asByteBuffer(asHasher("Good bye cruel World"), shape)));
+            assertEquals(2, bloofi.add(asByteBuffer(asHasher("Now is the time"), shape)));
 
-            bloofi.delete( 1 );
-            assertEquals( 2, bloofi.count() );
+            bloofi.delete(1);
+            assertEquals(2, bloofi.count());
 
         }
     }
 
     @Test
     public void searchTest() throws IOException {
-        try (FlatBloofi bloofi = new FlatBloofi( dir, shape.getNumberOfBits() )) {
-            assertEquals( 0, bloofi.add( asByteBuffer( asHasher( "Hello World"), shape)) );
-            assertEquals( 1, bloofi.add( asByteBuffer( asHasher( "Good bye cruel World"), shape))) ;
-            assertEquals( 2, bloofi.add( asByteBuffer( asHasher( "Now is the time"), shape ))) ;
+        try (FlatBloofi bloofi = new FlatBloofi(dir, shape.getNumberOfBits())) {
+            assertEquals(0, bloofi.add(asByteBuffer(asHasher("Hello World"), shape)));
+            assertEquals(1, bloofi.add(asByteBuffer(asHasher("Good bye cruel World"), shape)));
+            assertEquals(2, bloofi.add(asByteBuffer(asHasher("Now is the time"), shape)));
 
-            ByteBuffer target = asByteBuffer( asHasher( "Hello"), shape );
+            ByteBuffer target = asByteBuffer(asHasher("Hello"), shape);
             List<Integer> lst = new ArrayList<Integer>();
-            bloofi.search( lst::add , target);
-            assertEquals( 1, lst.size() );
+            bloofi.search(lst::add, target);
+            assertEquals(1, lst.size());
 
-            target = asByteBuffer( asHasher( "World"), shape );
+            target = asByteBuffer(asHasher("World"), shape);
             lst.clear();
-            bloofi.search( lst::add , target);
-            assertEquals( 2, lst.size() );
+            bloofi.search(lst::add, target);
+            assertEquals(2, lst.size());
 
             bloofi.delete(1);
             lst.clear();
-            bloofi.search( lst::add , target);
-            assertEquals( 1, lst.size() );
+            bloofi.search(lst::add, target);
+            assertEquals(1, lst.size());
 
-
-        }    }
+        }
+    }
 
     @Test
     public void updateTest() throws IOException {
-        try (FlatBloofi bloofi = new FlatBloofi( dir, shape.getNumberOfBits() )) {
-            assertEquals( 0, bloofi.add( asByteBuffer( asHasher( "Hello World"), shape)) );
-            assertEquals( 1, bloofi.add( asByteBuffer( asHasher( "Good bye cruel World"), shape))) ;
-            assertEquals( 2, bloofi.add( asByteBuffer( asHasher( "Now is the time"), shape ))) ;
+        try (FlatBloofi bloofi = new FlatBloofi(dir, shape.getNumberOfBits())) {
+            assertEquals(0, bloofi.add(asByteBuffer(asHasher("Hello World"), shape)));
+            assertEquals(1, bloofi.add(asByteBuffer(asHasher("Good bye cruel World"), shape)));
+            assertEquals(2, bloofi.add(asByteBuffer(asHasher("Now is the time"), shape)));
 
-            ByteBuffer target = asByteBuffer( asHasher( "Hello"), shape );
+            ByteBuffer target = asByteBuffer(asHasher("Hello"), shape);
             List<Integer> lst = new ArrayList<Integer>();
-            bloofi.search( lst::add , target);
-            assertEquals( 1, lst.size() );
+            bloofi.search(lst::add, target);
+            assertEquals(1, lst.size());
 
-            target = asByteBuffer( asHasher( "World"), shape );
+            target = asByteBuffer(asHasher("World"), shape);
             lst.clear();
-            bloofi.search( lst::add , target);
-            assertEquals( 2, lst.size() );
+            bloofi.search(lst::add, target);
+            assertEquals(2, lst.size());
 
-            bloofi.update(1, asByteBuffer( asHasher( "Hello Mr. Chips"), shape));
+            bloofi.update(1, asByteBuffer(asHasher("Hello Mr. Chips"), shape));
             lst.clear();
-            bloofi.search( lst::add , target);
-            assertEquals( 1, lst.size() );
+            bloofi.search(lst::add, target);
+            assertEquals(1, lst.size());
 
-            target = asByteBuffer( asHasher( "Hello"), shape );
+            target = asByteBuffer(asHasher("Hello"), shape);
             lst.clear();
-            bloofi.search( lst::add , target);
-            assertEquals( 2, lst.size() );
+            bloofi.search(lst::add, target);
+            assertEquals(2, lst.size());
 
-        }    }
+        }
+    }
 
 }

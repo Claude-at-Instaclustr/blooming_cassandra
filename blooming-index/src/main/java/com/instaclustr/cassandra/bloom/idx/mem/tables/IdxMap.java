@@ -60,11 +60,6 @@ public class IdxMap extends BaseTable implements AutoCloseable {
         super(bufferFile, BLOCK_BYTES);
     }
 
-    @Override
-    public String toString() {
-        return "IdxTable: " + super.toString();
-    }
-
     public MapEntry get(int idx) throws IOException {
         // ensure we have enough space for the block
 

@@ -109,7 +109,7 @@ public class BaseTable implements AutoCloseable {
      * @See Callable
      */
     @FunctionalInterface
-    interface Func {
+    public interface Func {
 
         /**
          * Executes some code that can thrown an exception but does not return
@@ -166,7 +166,7 @@ public class BaseTable implements AutoCloseable {
 
     @Override
     public String toString() {
-        return file.getAbsolutePath();
+        return String.format( "%s: %s", this.getClass().getSimpleName(), file.getAbsolutePath() );
     }
 
     /**
@@ -336,7 +336,7 @@ public class BaseTable implements AutoCloseable {
      * Determines if the block has been created in the table.  The block is considered created
      * only if the entire block has been created.  Partial blocks created with extendBytes
      * are not counted.
-     * @param block the block the check.
+     * @param block the block the check. (0 based)
      * @return {@code true} if the block is in the table, false otherwise.
      * @throws IOException on IO error
      */
@@ -351,11 +351,17 @@ public class BaseTable implements AutoCloseable {
      * @throws IOException on IO error.
      */
     protected final synchronized boolean ensureBlock(long blocks) throws IOException {
-        long fileBlocks = blockNumber(raFile.length());
-        ;
-        if (fileBlocks <= blocks) {
-            extendBuffer(blocks + 1 - fileBlocks);
+        long fileLen = raFile.length();
+        if (fileLen == 0) {
+            extendBuffer( blocks+1 );
             return true;
+        } else {
+            long fileBlocks = blockNumber(fileLen)-1;
+
+            if (fileBlocks < blocks) {
+                extendBuffer(blocks - fileBlocks);
+                return true;
+            }
         }
         return false;
     }

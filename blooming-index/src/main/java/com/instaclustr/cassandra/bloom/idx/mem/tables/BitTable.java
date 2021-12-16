@@ -26,12 +26,12 @@ import org.apache.commons.collections4.bloomfilter.BitMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class BusyTable extends BaseTable implements AutoCloseable {
-    private static final Logger logger = LoggerFactory.getLogger(BusyTable.class);
+public class BitTable extends BaseTable implements AutoCloseable {
+    private static final Logger logger = LoggerFactory.getLogger(BitTable.class);
 
     private LongBuffer writeBuffer;
 
-    public BusyTable(File busyFile) throws IOException {
+    public BitTable(File busyFile) throws IOException {
         super(busyFile, Long.BYTES);
         super.registerExtendNotification(() -> {
             writeBuffer = getWritableLongBuffer();
@@ -43,11 +43,6 @@ public class BusyTable extends BaseTable implements AutoCloseable {
     public void close() throws IOException {
         writeBuffer = null;
         super.close();
-    }
-
-    @Override
-    public String toString() {
-        return "BusyTable: " + super.toString();
     }
 
     /**
