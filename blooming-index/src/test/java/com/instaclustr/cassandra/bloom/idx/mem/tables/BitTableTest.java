@@ -143,15 +143,14 @@ public class BitTableTest {
     @Test
     public void boundaryCrossingTest() throws IOException {
         try (BitTable busy = new BitTable(file)) {
-            for (int i=0;i<Long.SIZE; i++)
-            {
-                assertEquals( i, busy.newIndex() );
-                assertEquals( Long.BYTES, busy.getFileSize());
+            for (int i = 0; i < Long.SIZE; i++) {
+                assertEquals(i, busy.newIndex());
+                assertEquals(Long.BYTES, busy.getFileSize());
             }
-            assertEquals( Long.SIZE, busy.newIndex() );
-            assertEquals( Long.BYTES*2, busy.getFileSize());
-            assertEquals( Long.SIZE+1, busy.newIndex() );
-            assertEquals( Long.BYTES*2, busy.getFileSize());
+            assertEquals(Long.SIZE, busy.newIndex());
+            assertEquals(Long.BYTES * 2, busy.getFileSize());
+            assertEquals(Long.SIZE + 1, busy.newIndex());
+            assertEquals(Long.BYTES * 2, busy.getFileSize());
         }
 
     }

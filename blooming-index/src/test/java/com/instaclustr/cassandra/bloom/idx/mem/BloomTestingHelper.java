@@ -17,18 +17,18 @@ public class BloomTestingHelper {
         // TODO Auto-generated constructor stub
     }
 
-    public static Hasher asHasher( String phrase ) {
+    public static Hasher asHasher(String phrase) {
         HasherCollection result = new HasherCollection();
-        for (String word : phrase.split( " " )) {
-            long[] hash = MurmurHash3.hash128( word.getBytes( StandardCharsets.UTF_8));
-            result.add( new SimpleHasher( hash[0], hash[1] ));
+        for (String word : phrase.split(" ")) {
+            long[] hash = MurmurHash3.hash128(word.getBytes(StandardCharsets.UTF_8));
+            result.add(new SimpleHasher(hash[0], hash[1]));
         }
         return result;
     }
 
-    public static ByteBuffer asByteBuffer( Hasher hasher, Shape shape ) {
-        ByteBuffer result = ByteBuffer.allocate(BitMap.numberOfBitMaps( shape.getNumberOfBits() )*Long.BYTES );
-        BitMapProducer.fromIndexProducer(hasher.indices(shape), shape ).forEachBitMap( result::putLong );
+    public static ByteBuffer asByteBuffer(Hasher hasher, Shape shape) {
+        ByteBuffer result = ByteBuffer.allocate(BitMap.numberOfBitMaps(shape.getNumberOfBits()) * Long.BYTES);
+        BitMapProducer.fromIndexProducer(hasher.indices(shape), shape).forEachBitMap(result::putLong);
         result.flip();
         return result;
     }

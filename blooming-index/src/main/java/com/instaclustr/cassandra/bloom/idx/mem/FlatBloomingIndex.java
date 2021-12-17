@@ -174,13 +174,14 @@ public class FlatBloomingIndex implements Index {
                     + "counter column, partition key, primary key column, or static column");
         }
 
-//        final String dataDir = indexDef.options.get("dataDir");
-//        if (dataDir == null || dataDir.length() == 0) {
-//            throw new IllegalArgumentException(String.format("dataDir must be specified"));
-//        }
-//        File dir = new File(dataDir);
+        // final String dataDir = indexDef.options.get("dataDir");
+        // if (dataDir == null || dataDir.length() == 0) {
+        // throw new IllegalArgumentException(String.format("dataDir must be
+        // specified"));
+        // }
+        // File dir = new File(dataDir);
         File dir = baseCfs.getDirectories().getCFDirectories().get(0).getParentFile();
-        dir = new File( dir, indexDef.name+"_FlatBloofi");
+        dir = new File(dir, indexDef.name + "_FlatBloofi");
         dir.mkdirs();
         if (!dir.exists() || !dir.isDirectory()) {
             throw new IllegalArgumentException(String.format("dataDir (%s) must exist and be a directory", dir));

@@ -71,9 +71,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.google.common.collect.ImmutableSet;
-import com.instaclustr.cassandra.bloom.idx.std.BloomingIndexSerde;
-import com.instaclustr.cassandra.bloom.idx.std.BloomingIndexer;
-import com.instaclustr.cassandra.bloom.idx.std.BloomingSearcher;
 import com.instaclustr.iterator.util.ExtendedIterator;
 import com.instaclustr.iterator.util.WrappedIterator;
 
@@ -556,14 +553,14 @@ public class BloomingIndex implements Index {
 
         try {
             WrappedIterator.create(update.iterator()).mapWith(r -> r.getCell(indexedColumn)).filterDrop(b -> b == null)
-            .mapWith(Cell::buffer).forEach(v -> {
-                if (v.remaining() >= FBUtilities.MAX_UNSIGNED_SHORT) {
-                    throw new InvalidRequestException(String.format(
-                            "Cannot index value of size %d for index %s on %s(%s) (maximum allowed size=%d)",
-                            v.remaining(), metadata.name, baseCfs.metadata, indexedColumn.name.toString(),
-                            FBUtilities.MAX_UNSIGNED_SHORT));
-                }
-            });
+                    .mapWith(Cell::buffer).forEach(v -> {
+                        if (v.remaining() >= FBUtilities.MAX_UNSIGNED_SHORT) {
+                            throw new InvalidRequestException(String.format(
+                                    "Cannot index value of size %d for index %s on %s(%s) (maximum allowed size=%d)",
+                                    v.remaining(), metadata.name, baseCfs.metadata, indexedColumn.name.toString(),
+                                    FBUtilities.MAX_UNSIGNED_SHORT));
+                        }
+                    });
         } catch (Exception e) {
             throw new InvalidRequestException(e.getMessage(), e);
         }

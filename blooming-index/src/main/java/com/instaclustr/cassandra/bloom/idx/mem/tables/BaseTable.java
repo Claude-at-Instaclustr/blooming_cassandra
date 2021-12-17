@@ -56,10 +56,10 @@ import org.slf4j.LoggerFactory;
  *
  */
 public class BaseTable implements AutoCloseable {
-
     private final File file;
     private final RandomAccessFile raFile;
     private final int blockSize;
+    private int extensionBlockSize;
     private final Map<Integer, ReentrantLock> blockLocks = new ConcurrentHashMap<Integer, ReentrantLock>();
     private final ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor();
     private final List<Func> extendNotify = new CopyOnWriteArrayList<Func>();
@@ -89,7 +89,12 @@ public class BaseTable implements AutoCloseable {
         this.file.createNewFile();
         this.raFile = new RandomAccessFile(file, "rw");
         this.blockSize = blockSize;
+        this.extensionBlockSize = blockSize;
         this.executor.scheduleWithFixedDelay(blockLogsCleanup, 1000 * 5 * 50, 5, TimeUnit.MINUTES);
+    }
+
+    protected void setExtensionBlockSize(int extensionBlockSize) {
+        this.extensionBlockSize = extensionBlockSize;
     }
 
     protected void registerExtendNotification(Func fn) {
@@ -166,7 +171,7 @@ public class BaseTable implements AutoCloseable {
 
     @Override
     public String toString() {
-        return String.format( "%s: %s", this.getClass().getSimpleName(), file.getAbsolutePath() );
+        return String.format("%s: %s", this.getClass().getSimpleName(), file.getAbsolutePath());
     }
 
     /**
@@ -351,15 +356,17 @@ public class BaseTable implements AutoCloseable {
      * @throws IOException on IO error.
      */
     protected final synchronized boolean ensureBlock(long blocks) throws IOException {
-        long fileLen = raFile.length();
-        if (fileLen == 0) {
-            extendBuffer( blocks+1 );
+        if (blocks == 0) {
+            return true;
+        }
+        long fileBytes = raFile.length();
+        if (fileBytes == 0) {
+            extendBuffer(blocks);
             return true;
         } else {
-            long fileBlocks = blockNumber(fileLen)-1;
-
-            if (fileBlocks < blocks) {
-                extendBuffer(blocks - fileBlocks);
+            long requiredBytes = blocks * extensionBlockSize;
+            if (fileBytes < requiredBytes) {
+                extendBuffer(blocks - (fileBytes / extensionBlockSize));
                 return true;
             }
         }
@@ -392,7 +399,7 @@ public class BaseTable implements AutoCloseable {
         FileChannel fileChannel = raFile.getChannel();
         // Get direct long buffer access using channel.map() operation
         int result = (int) fileChannel.size();
-        long size = fileChannel.size() + (blocks * blockSize);
+        long size = fileChannel.size() + (blocks * extensionBlockSize);
         fileChannel.map(MapMode.READ_WRITE, 0, size);
         extendNotify.forEach(f -> execQuietly(f));
         return result;

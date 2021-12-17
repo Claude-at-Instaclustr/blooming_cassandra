@@ -106,7 +106,7 @@ public class BufferTableTest {
             result = table.get(3);
             assertEquals(
                     ByteBuffer
-                    .wrap("Now is the time for all good people to come to the aid of their planet".getBytes()),
+                            .wrap("Now is the time for all good people to come to the aid of their planet".getBytes()),
                     result);
 
             assertNull("before first should fail", table.get(0));
@@ -146,7 +146,7 @@ public class BufferTableTest {
             result = table.get(3);
             assertEquals(
                     ByteBuffer
-                    .wrap("Now is the time for all good people to come to the aid of their planet".getBytes()),
+                            .wrap("Now is the time for all good people to come to the aid of their planet".getBytes()),
                     result);
 
             checkLocks(table);

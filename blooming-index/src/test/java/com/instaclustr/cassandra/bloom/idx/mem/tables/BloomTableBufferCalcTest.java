@@ -5,14 +5,9 @@ import static org.junit.Assert.assertTrue;
 
 import java.io.File;
 import java.io.IOException;
-import java.nio.LongBuffer;
-import java.util.ArrayList;
 import java.util.HashSet;
-import java.util.List;
-import java.util.PrimitiveIterator;
 import java.util.Set;
 
-import org.apache.commons.collections4.bloomfilter.BitMap;
 import org.apache.commons.collections4.bloomfilter.Shape;
 import org.apache.commons.io.FileUtils;
 import org.junit.After;
@@ -22,7 +17,6 @@ import org.junit.BeforeClass;
 import org.junit.Test;
 
 import com.google.common.io.Files;
-import com.instaclustr.cassandra.bloom.idx.mem.LongBufferBitMap;
 
 public class BloomTableBufferCalcTest {
 
@@ -137,10 +131,15 @@ public class BloomTableBufferCalcTest {
     @Test
     public void getBufferSearchPositionTest() throws IOException {
         int check = 0;
+        bloomTable.getBitTable().ensureBlock(2);
+        long fileSize = bloomTable.getBitTable().getFileSize();
         for (int block = 0; block < 2; block++) {
             for (int bit = 0; bit < shape.getNumberOfBits(); bit++) {
                 int position = calc.getBufferSearchPosition(block, bit);
-                assertEquals(check, position);
+                assertTrue(String.format("Check error at %s (%s, %s)", check, block, bit),
+                        check < ((block + 1) * calc.getLengthInBytes()));
+                assertEquals(String.format("Position error at %s (%s, %s)", check, block, bit), check, position);
+                assertTrue(String.format("Length error at %s (%s, %s) ", position, block, bit), position < fileSize);
                 check += Long.BYTES;
             }
         }
@@ -148,20 +147,27 @@ public class BloomTableBufferCalcTest {
 
     @Test
     public void getNumberOfBlocksTest() throws IOException {
-        int[] expected = { 48, 96, 144 };
-        double ratio = 1.0*calc.getLengthInBytes() / bloomTable.getBitTable().getBlockSize();
+        double ratio = 1.0 * calc.getLengthInBytes() / bloomTable.getBitTable().getBlockSize();
         int factor = calc.getLengthInBytes() / bloomTable.getBitTable().getBlockSize();
-        assertEquals( ratio, factor, 0.0001 );
-        assertEquals( factor, calc.getNumberOfBlocks(0) );
-        assertEquals( factor, calc.getNumberOfBlocks( Long.SIZE-1 ));
-        assertEquals( factor*2, calc.getNumberOfBlocks( Long.SIZE ));
-        assertEquals( factor*3, calc.getNumberOfBlocks( Long.SIZE*2 ));
+        assertEquals(ratio, factor, 0.0001);
+        assertEquals(1, calc.getNumberOfBlocks(0));
+        assertEquals(1, calc.getNumberOfBlocks(Long.SIZE - 1));
+        assertEquals(2, calc.getNumberOfBlocks(Long.SIZE));
+        assertEquals(3, calc.getNumberOfBlocks(Long.SIZE * 2));
 
-        for (int i=0;i<Long.SIZE*3;i++) {
-            assertEquals( expected[i/Long.SIZE],calc.getNumberOfBlocks(i));
+        for (int i = 0; i < Long.SIZE * 3; i++) {
+            assertEquals((i / Long.SIZE) + 1, calc.getNumberOfBlocks(i));
         }
 
     }
 
+    @Test
+    public void testWeirdCase() throws IOException {
+        teardown();
+        file = new File(dir, "BloomTable");
+        bloomTable = new BloomTable(173, file);
+        calc = bloomTable.new BufferCalc();
+
+    }
 
 }

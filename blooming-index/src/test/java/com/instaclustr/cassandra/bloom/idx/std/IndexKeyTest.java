@@ -9,8 +9,6 @@ import java.util.TreeSet;
 
 import org.junit.Test;
 
-import com.instaclustr.cassandra.bloom.idx.std.IndexKey;
-
 public class IndexKeyTest {
 
     @Test

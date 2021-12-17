@@ -18,6 +18,7 @@ package com.instaclustr.cassandra.bloom.idx.mem.tables;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.nio.LongBuffer;
 import java.util.PrimitiveIterator;
 import java.util.function.IntConsumer;
@@ -41,7 +42,6 @@ public class BloomTable implements AutoCloseable {
     private final BufferCalc bufferCalc;
     private final BitTable bitTable;
 
-
     /**
      * The sizes for a singe bloom filter
      * @param numberOfBits
@@ -49,11 +49,11 @@ public class BloomTable implements AutoCloseable {
      * @throws IOException
      */
     public BloomTable(int numberOfBits, File file) throws IOException {
-        this.bitTable = new BitTable( file );
+        this.bitTable = new BitTable(file);
         this.numberOfBits = numberOfBits;
         this.bufferCalc = new BufferCalc();
+        this.bitTable.setExtensionBlockSize(bufferCalc.lengthInBytes);
     }
-
 
     /**
      * Sets the bloom filter at the index position in the table.
@@ -64,6 +64,7 @@ public class BloomTable implements AutoCloseable {
     public void setBloomAt(int idx, LongBuffer bloomFilter) throws IOException {
         bitTable.ensureBlock(bufferCalc.getNumberOfBlocks(idx));
 
+        long fileSize = bitTable.getFileSize();
         LongBufferBitMap bloomBitMap = new LongBufferBitMap(bloomFilter);
         // for each enabled bit in the Bloom filter enable the idx bit in
         // the associated mappedBits.
@@ -86,7 +87,7 @@ public class BloomTable implements AutoCloseable {
      */
     public void search(IntConsumer result, LongBuffer bloomFilter, BitTable busy) throws IOException {
         LongBufferBitMap bloomBitMap = new LongBufferBitMap(bloomFilter);
-        LongBuffer buffer = bitTable.getLongBuffer();
+        ByteBuffer buffer = bitTable.getBuffer();
 
         int blockLimit = bufferCalc.getNumberOfBuffers();
         for (int blockIdx = 0; blockIdx < blockLimit; blockIdx++) {
@@ -94,7 +95,7 @@ public class BloomTable implements AutoCloseable {
             long w = ~0L;
             PrimitiveIterator.OfInt bit = bloomBitMap.indices(numberOfBits);
             while (bit.hasNext()) {
-                w &= buffer.get( bufferCalc.getBufferSearchPosition(blockIdx, bit.nextInt()));
+                w &= buffer.getLong(bufferCalc.getBufferSearchPosition(blockIdx, bit.nextInt()));
             }
 
             while (w != 0) {
@@ -109,11 +110,11 @@ public class BloomTable implements AutoCloseable {
 
     }
 
-
     @Override
     public String toString() {
         return bitTable.toString();
     }
+
     @Override
     public void close() throws IOException {
         bitTable.close();
@@ -133,8 +134,8 @@ public class BloomTable implements AutoCloseable {
         return bufferCalc;
     }
 
-    public void registerExtendNotification(Func fn ) {
-        bitTable.registerExtendNotification( fn );
+    public void registerExtendNotification(Func fn) {
+        bitTable.registerExtendNotification(fn);
     }
 
     /**
@@ -158,6 +159,7 @@ public class BloomTable implements AutoCloseable {
         int getLengthInBytes() {
             return lengthInBytes;
         }
+
         /**
          * Gets the byte position in the file of the buffer entry containing idx.
          * @param idx the index to look for.
@@ -184,7 +186,7 @@ public class BloomTable implements AutoCloseable {
          */
         public int getBufferBitPosition(int idx, int bit) {
             // get the bufferEntry offset
-            return (getBufferOffsetForIdx(idx)*Byte.SIZE)
+            return (getBufferOffsetForIdx(idx) * Byte.SIZE)
                     // + the position of the bit block
                     + (bit * Long.SIZE)
                     // + the index of the idx in the bit block
@@ -197,12 +199,18 @@ public class BloomTable implements AutoCloseable {
          * @return the number of blocks necessary to contain idx.
          */
         public int getNumberOfBlocks(int idx) {
-            int blockCount = BitMap.getLongIndex(idx)+1;
-            return blockCount * lengthInBytes / bitTable.getBlockSize();
+            int blockCount = BitMap.getLongIndex(idx) + 1;
+            return blockCount;// * lengthInBytes / bitTable.getBlockSize();
         }
 
-        public int getBufferSearchPosition( int block, int bit ) {
-            return block*lengthInBytes + bit*Long.BYTES;
+        /**
+         * Gets the byte offset of the long in the buffer representing the bit
+         * @param block the block number of the buffer
+         * @param bit the bit number within the buffer.
+         * @return the byte offset of the long in the buffer.
+         */
+        public int getBufferSearchPosition(int block, int bit) {
+            return block * lengthInBytes + bit * Long.BYTES;
         }
 
     }

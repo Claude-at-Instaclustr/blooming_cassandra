@@ -63,7 +63,7 @@ public class IdxMap extends BaseTable implements AutoCloseable {
     public MapEntry get(int idx) throws IOException {
         // ensure we have enough space for the block
 
-        ensureBlock(idx);
+        ensureBlock(idx + 1);
         ByteBuffer buff = getBuffer();
         return new MapEntry(buff, idx);
     }

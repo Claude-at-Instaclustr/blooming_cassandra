@@ -273,7 +273,7 @@ public class BufferTableIdx extends BaseTable implements AutoCloseable {
      * @throws IOException on IO Error.
      */
     public IdxEntry get(int block) throws IOException {
-        ensureBlock(block);
+        ensureBlock(block + 1);
         return new IdxEntry(getBuffer(), block);
     }
 

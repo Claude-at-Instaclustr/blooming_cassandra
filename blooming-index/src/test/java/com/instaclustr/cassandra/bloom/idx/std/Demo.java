@@ -132,7 +132,7 @@ public class Demo implements AutoCloseable {
      * @throws IOException on I/O error.
      */
     public void load(URL url, int limit, int threads) throws IOException {
-        BulkExecutor bulkExecutor = new BulkExecutor(session, Executors.newFixedThreadPool(threads), threads*50);
+        BulkExecutor bulkExecutor = new BulkExecutor(session, Executors.newFixedThreadPool(threads), threads * 50);
         try (GeoNameIterator geoNameIterator = new GeoNameIterator(url)) {
             if (limit > 0) {
                 geoNameIterator.setLimit(limit);

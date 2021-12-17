@@ -56,12 +56,12 @@ public class BaseTableTest {
         try (BaseTable table = new BaseTable(file, 5)) {
             assertEquals(0L, table.getFileSize());
             // ensure block 0 exists
-            table.ensureBlock(0);
+            table.ensureBlock(1);
             assertEquals(5L, table.getFileSize());
 
             // create a block after a gap
             table.ensureBlock(9);
-            assertEquals(50L, table.getFileSize());
+            assertEquals(45L, table.getFileSize());
         }
     }
 
@@ -221,7 +221,7 @@ public class BaseTableTest {
             // verify looking didn't change things
             assertFalse(table.hasBlock(0));
 
-            table.ensureBlock(0);
+            table.ensureBlock(1);
             assertTrue(table.hasBlock(0));
             assertFalse(table.hasBlock(1));
 
