@@ -19,8 +19,10 @@ package com.instaclustr.cassandra.bloom.idx.mem;
 import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.List;
 import java.util.function.Consumer;
 import java.util.function.IntConsumer;
 
@@ -36,6 +38,7 @@ import org.apache.cassandra.db.ReadExecutionController;
 import org.apache.cassandra.db.SinglePartitionReadCommand;
 import org.apache.cassandra.db.WriteContext;
 import org.apache.cassandra.db.compaction.CompactionManager;
+import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.db.marshal.BytesType;
 import org.apache.cassandra.db.marshal.Int32Type;
 import org.apache.cassandra.db.partitions.PartitionUpdate;
@@ -169,6 +172,7 @@ public class FlatBloomingIndexSerde {
         return indexCfs.decorateKey(value);
     }
 
+
     /**
      * Constructs the clustering for an entry in the index table based on values from the base data.
      * The clustering columns in the index table encode the values required to retrieve the correct data
@@ -180,10 +184,17 @@ public class FlatBloomingIndexSerde {
      */
     private <T> DecoratedKey buildIndexKey(DecoratedKey rowKey, Clustering<T> clustering) {
         CBuilder builder = CBuilder.create(getIndexComparator());
+
         builder.add(rowKey.getKey());
-        for (int i = 0; i < clustering.size(); i++)
+        List<AbstractType<?>> types = new ArrayList<>(clustering.size()+1);
+        types.add( BytesType.instance );
+        for (int i = 0; i < clustering.size(); i++) {
             builder.add(clustering.get(i), clustering.accessor());
-        return getIndexKeyFor(builder.build().bufferAt(0));
+            types.add( BytesType.instance );
+        }
+
+        ByteBuffer result = Clustering.serializer.serialize(builder.build(), 0x0a, types);
+        return getIndexKeyFor(result);
     }
 
     private Clustering<?> buildClustering(int idx) {
@@ -214,6 +225,10 @@ public class FlatBloomingIndexSerde {
                 // new record
                 idx = flatBloofi.add(bloomFilter);
                 DecoratedKey valueKey = buildIndexKey(rowKey, clustering);
+                if (valueKey.getKey().remaining() == 0) {
+                    logger.error( "Invalid key length for %s and %s", rowKey, clustering );
+                }
+                keyTable.set(idx, valueKey.getKey());
                 Clustering<?> indexClustering = buildClustering(idx);
                 Row row = BTreeRow.noCellLiveRow(indexClustering, info);
                 PartitionUpdate upd = partitionUpdate(valueKey, row);

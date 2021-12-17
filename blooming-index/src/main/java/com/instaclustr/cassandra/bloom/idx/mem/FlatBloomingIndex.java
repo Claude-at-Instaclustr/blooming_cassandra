@@ -239,7 +239,8 @@ public class FlatBloomingIndex implements Index {
 
     @Override
     public Optional<ColumnFamilyStore> getBackingTable() {
-        return null;
+        logger.debug("getBackingTable");
+        return Optional.of(serde.getBackingTable());
     }
 
     @Override

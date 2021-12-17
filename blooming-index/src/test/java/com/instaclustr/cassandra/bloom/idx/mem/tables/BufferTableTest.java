@@ -117,6 +117,28 @@ public class BufferTableTest {
     }
 
     @Test
+    public void testGetSetsLimits() throws IOException {
+        try (BufferTable table = new BufferTable(file, 1024)) {
+            table.set(1, ByteBuffer.wrap("Hello World".getBytes()));
+            table.set(2, ByteBuffer.wrap("Good bye Cruel World".getBytes()));
+            table.set(3, ByteBuffer
+                    .wrap("Now is the time for all good people to come to the aid of their planet".getBytes()));
+
+
+
+            ByteBuffer result = table.get(1);
+            assertEquals( 0, result.position() );
+            assertEquals( 11, result.remaining() );
+
+            result = table.get(2);
+            assertEquals( 11, result.position() );
+            assertEquals( 20, result.remaining() );
+
+        }
+
+    }
+
+    @Test
     public void testReuseDeleted() throws IOException {
         try (BufferTable table = new BufferTable(file, 1024)) {
             table.set(1, ByteBuffer.wrap("Hello World".getBytes()));

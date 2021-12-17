@@ -92,7 +92,7 @@ public class FlatBloomingIndexer implements Indexer {
 
     @Override
     public void insertRow(Row row) {
-        logger.trace("insertRow");
+        logger.trace("insertRow {} {}", row );
         /*
          * single updates to the key only produce insert statements -- no deletes we
          * have to verify if there is already a record and read the existing bloom
@@ -115,7 +115,7 @@ public class FlatBloomingIndexer implements Indexer {
 
     @Override
     public void updateRow(Row oldRowData, Row newRowData) {
-        logger.trace("updateRow");
+        logger.trace("updateRow {} {}", oldRowData, newRowData );
         if (newRowData.isStatic()) {
             if (!oldRowData.isStatic()) {
                 removeRow(oldRowData);
@@ -128,6 +128,7 @@ public class FlatBloomingIndexer implements Indexer {
 
     @Override
     public void removeRow(Row row) {
+        logger.trace("removeRow {} {}", row );
 
         if (row.isStatic())
             return;

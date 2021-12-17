@@ -256,6 +256,23 @@ public class BufferTableIdx extends BaseTable implements AutoCloseable {
         }
     }
 
+    public static void main(String[] args) throws IOException {
+        File f = new File( args[0] );
+        if (!f.exists()) {
+            System.err.println( String.format( "%s does not exist", f.getAbsoluteFile() ));
+        }
+        System.out.println( "'index','offset','available','deleted','initialized','invalid','used','allocated'");
+        try (BufferTableIdx idx = new BufferTableIdx( f )) {
+            int blocks = (int)idx.getFileSize() / idx.getBlockSize();
+            for (int block=0;block<blocks;block++) {
+                IdxEntry entry = idx.get(block);
+                System.out.println( String.format("%s,%s,%s,%s,%s,%s,%s,%s", block, entry.getOffset(),
+                        entry.isAvailable(), entry.isDeleted(), entry.isInitialized(), entry.isInvalid(),
+                        entry.getLen(), entry.getAlloc()));
+            }
+        }
+    }
+
     /**
      * Constructor
      * @param bufferFile the file to operate on.

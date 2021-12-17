@@ -20,6 +20,8 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 
+import com.instaclustr.cassandra.bloom.idx.mem.tables.BufferTableIdx.IdxEntry;
+
 /**
  * Table that maps the external index to the internal KeytableIndex
  *
@@ -53,6 +55,21 @@ public class IdxMap extends BaseTable implements AutoCloseable {
 
         public int getKeyIdx() {
             return buffer.getInt((idx * BLOCK_BYTES) + 1);
+        }
+    }
+
+    public static void main(String[] args) throws IOException {
+        File f = new File( args[0] );
+        if (!f.exists()) {
+            System.err.println( String.format( "%s does not exist", f.getAbsoluteFile() ));
+        }
+        System.out.println( "'Index','Initialized','reference'");
+        try (IdxMap idx = new IdxMap( f )) {
+            int blocks = (int)idx.getFileSize() / idx.getBlockSize();
+            for (int block=0;block<blocks;block++) {
+                MapEntry entry = idx.get(block);
+                System.out.println( String.format("%s,%s,%s", block, entry.isInitialized(), entry.getKeyIdx()));
+            }
         }
     }
 

@@ -21,6 +21,11 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.Stack;
 
+import com.instaclustr.cassandra.bloom.idx.mem.tables.BufferTableIdx.IdxEntry;
+import com.instaclustr.cassandra.bloom.idx.mem.tables.IdxMap.MapEntry;
+
+import net.jpountz.util.ByteBufferUtils;
+
 public class BufferTable extends BaseTable {
 
     public static final int UNSET = -1;
@@ -32,6 +37,43 @@ public class BufferTable extends BaseTable {
         closeQuietly(idxTable);
         closeQuietly(keyTableIdx);
         super.close();
+    }
+
+    public static void main(String[] args) throws IOException {
+        File f = new File(args[0]);
+        if (!f.exists()) {
+            System.err.println(String.format("%s does not exist", f.getAbsoluteFile()));
+        }
+        int blockSize = Integer.parseInt(args[1]);
+
+        System.out.println("'index','map','offset','hex','char'");
+
+        try (BufferTable bufferTable = new BufferTable(f, blockSize)) {
+
+            int blocks = (int) bufferTable.idxTable.getFileSize() / bufferTable.idxTable.getBlockSize();
+            for (int block = 0; block < blocks; block++) {
+                MapEntry mapEntry = bufferTable.idxTable.get(block);
+                if (mapEntry.isInitialized()) {
+                    IdxEntry idxEntry = bufferTable.keyTableIdx.get(mapEntry.getKeyIdx());
+                    ByteBuffer value = bufferTable.get(block);
+
+                    System.out.print(String.format("%s,%s,%s,", block, mapEntry.getKeyIdx(), idxEntry.getOffset()));
+                    if (value == null) {
+                        System.out.println(",");
+                    } else {
+                        System.out.print( "'0x");
+                        for (int i = 0; i < idxEntry.getLen(); i++) {
+                            System.out.print(String.format("%2x", value.get(value.position() + i)));
+                        }
+                        System.out.print("','");
+                        for (int i = 0; i < idxEntry.getLen(); i++) {
+                            System.out.print(String.format("%s", (char) value.get(value.position() + i)));
+                        }
+                        System.out.println("'");
+                    }
+                }
+            }
+        }
     }
 
     public BufferTable(File file, int blockSize) throws IOException {
