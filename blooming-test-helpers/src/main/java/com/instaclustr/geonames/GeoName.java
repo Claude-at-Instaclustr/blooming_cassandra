@@ -2,6 +2,7 @@ package com.instaclustr.geonames;
 
 import java.nio.LongBuffer;
 import java.util.function.LongConsumer;
+import java.util.function.LongPredicate;
 
 import org.apache.commons.collections4.bloomfilter.BitMapProducer;
 import org.apache.commons.collections4.bloomfilter.BloomFilter;
@@ -137,7 +138,7 @@ public class GeoName {
 
         public static String hexString(BloomFilter filter) {
             StringBuilder sb = new StringBuilder("0x");
-            filter.forEachBitMap(word -> sb.append(String.format("%016X", word)));
+            filter.forEachBitMap(word -> {sb.append(String.format("%016X", word));return true;});
             return sb.toString();
         }
 
@@ -203,11 +204,14 @@ public class GeoName {
             result.filter = new SimpleBloomFilter(GeoNameHasher.shape, new BitMapProducer() {
 
                 @Override
-                public void forEachBitMap(LongConsumer consumer) {
+                public boolean forEachBitMap(LongPredicate consumer) {
                     LongBuffer lb = row.getBlob("filter").asLongBuffer();
                     while (lb.hasRemaining()) {
-                        consumer.accept(lb.get());
+                        if (!consumer.test(lb.get())) {
+                            return false;
+                        }
                     }
+                    return true;
                 }
             });
             return result;

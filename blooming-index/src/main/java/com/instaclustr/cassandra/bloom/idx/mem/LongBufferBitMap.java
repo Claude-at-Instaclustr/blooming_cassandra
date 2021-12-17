@@ -89,7 +89,9 @@ public class LongBufferBitMap {
      * @Throws IndexOutOfBoundsException exception if idx is negative.
      */
     public boolean isSet(int idx) {
-        BitMap.checkPositive(idx);
+        if (idx < 0) {
+            throw new IllegalArgumentException(String.format("idx (%s) may not be less than zero (0)", idx));
+        }
         try {
             return (buffer.get(BitMap.getLongIndex(idx)) & BitMap.getLongBit(idx)) > 0;
         } catch (IndexOutOfBoundsException e) {

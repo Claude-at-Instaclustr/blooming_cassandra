@@ -250,7 +250,7 @@ public class BaseTable implements AutoCloseable {
      * @param value the value to check
      * @param name the name of the parameter
      */
-    private void checkGEZero(long value, String name) {
+    protected void checkGEZero(long value, String name) {
         if (value < 0) {
             throw new IllegalArgumentException(String.format("%s (%s) may not be less than zero (0)", name, value));
         }
@@ -261,7 +261,7 @@ public class BaseTable implements AutoCloseable {
      * @param value the value to check
      * @param name the name of the parameter
      */
-    private void checkGTZero(long count, String name) {
+    protected void checkGTZero(long count, String name) {
         if (count <= 0) {
             throw new IllegalArgumentException(
                     String.format("%s (%s) may not be less than or equal to zero (0)", name, count));

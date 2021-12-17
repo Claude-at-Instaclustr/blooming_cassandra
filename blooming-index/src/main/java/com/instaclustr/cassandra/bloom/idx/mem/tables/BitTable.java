@@ -165,7 +165,7 @@ public class BitTable extends BaseTable implements AutoCloseable {
      * @throws IndexOutOfBoundx exception if {@code idx<0}.
      */
     public void clear(int idx) throws IOException {
-        BitMap.checkPositive(idx);
+        checkGEZero(idx, "index");
         int wordIdx = BitMap.getLongIndex(idx);
         sync(() -> writeBuffer.put(wordIdx, writeBuffer.get(wordIdx) & ~BitMap.getLongBit(idx)), wordIdx * Long.BYTES,
                 Long.BYTES, 4);
@@ -179,7 +179,7 @@ public class BitTable extends BaseTable implements AutoCloseable {
      * @throws IndexOutOfBoundx exception if {@code idx<0}.
      */
     public void set(int idx) throws IOException {
-        BitMap.checkPositive(idx);
+        checkGEZero(idx, "index");
         int wordIdx = BitMap.getLongIndex(idx);
         sync(() -> writeBuffer.put(wordIdx, writeBuffer.get(wordIdx) | BitMap.getLongBit(idx)), wordIdx * Long.BYTES,
                 Long.BYTES, 4);
@@ -194,7 +194,7 @@ public class BitTable extends BaseTable implements AutoCloseable {
      * @throws IndexOutOfBoundx exception if {@code idx<0}.
      */
     public boolean isSet(int idx) throws IOException {
-        BitMap.checkPositive(idx);
+        checkGEZero(idx, "index");
         LongBuffer buff = getLongBuffer();
         try {
             int wordIdx = BitMap.getLongIndex(idx);

@@ -26,13 +26,13 @@ import java.util.Set;
 import java.util.TreeMap;
 import java.util.function.Consumer;
 import java.util.function.LongConsumer;
+import java.util.function.LongPredicate;
 import java.util.stream.Collectors;
 
 import org.apache.commons.collections4.bloomfilter.BitMapProducer;
 import org.apache.commons.collections4.bloomfilter.BloomFilter;
 import org.apache.commons.collections4.bloomfilter.Shape;
 import org.apache.commons.collections4.bloomfilter.SimpleBloomFilter;
-import org.apache.commons.collections4.bloomfilter.exceptions.NoMatchException;
 import org.apache.commons.collections4.bloomfilter.hasher.Hasher;
 import org.apache.commons.collections4.bloomfilter.hasher.SimpleHasher;
 import org.apache.commons.lang3.tuple.ImmutablePair;
@@ -126,11 +126,11 @@ public class IdxTable {
 
         String fmt = "INSERT INTO %s.%s ( position, code, tokn ) VALUES ( %d, %d, '%s' )";
         BulkExecutor executor = new BulkExecutor(session);
-        producer.forEachBitMap(new LongConsumer() {
+        producer.forEachBitMap(new LongPredicate() {
             int pos = 0;
 
             @Override
-            public void accept(long word) {
+            public boolean test(long word) {
 
                 for (int i = 0; i < Long.BYTES; i++) {
                     int code = (int) (word & 0xFF);
@@ -139,8 +139,10 @@ public class IdxTable {
                         executor.execute(String.format(fmt, keyspace, tblName, pos++, code, token));
                     } catch (InterruptedException e) {
                         e.printStackTrace();
+                        return false;
                     }
                 }
+                return true;
             }
         });
         executor.awaitFinish();
@@ -269,7 +271,7 @@ public class IdxTable {
          * @param otherTokens The other tokens to merge.
          * @throws NoMatchException If the result is an empty set of tokens.
          */
-        public synchronized void merge(GatedTokens otherTokens) throws NoMatchException {
+        public synchronized boolean merge(GatedTokens otherTokens)  {
             int otherCnt = otherTokens.getTokens().size();
             int otherTot = otherCnt + otherTokens.skipped;
             double otherPct = (100.0 * otherCnt) / otherTot;
@@ -279,11 +281,12 @@ public class IdxTable {
             tokens.retainAll(otherTokens.getTokens());
             System.out.println(String.format("resulting in %d tokens.  Gate count: %s", tokens.size(), gateCount));
             if (tokens.isEmpty()) {
-                throw new NoMatchException();
+                return false;
             }
             if (gateCount / tokens.size() > 10) {
                 rebuildGate(gate.getShape());
             }
+            return true;
         }
 
     }
@@ -328,9 +331,7 @@ public class IdxTable {
             if (tokens == null) {
                 tokens = results;
             } else {
-                try {
-                    tokens.merge(results);
-                } catch (NoMatchException e) {
+                if (!tokens.merge(results)) {
                     executor.kill();
                 }
             }
@@ -351,11 +352,11 @@ public class IdxTable {
         Map<Integer, List<Pair<Integer, Integer>>> order = new TreeMap<Integer, List<Pair<Integer, Integer>>>(
                 Collections.reverseOrder());
         try {
-            producer.forEachBitMap(new LongConsumer() {
+            producer.forEachBitMap(new LongPredicate() {
                 int pos = 0;
 
                 @Override
-                public void accept(long word) {
+                public boolean test(long word) {
                     for (int i = 0; i < Long.BYTES; i++) {
                         int code = (int) (word & 0xFF);
                         word = word >> Byte.SIZE;
@@ -369,6 +370,7 @@ public class IdxTable {
                         }
                         pos++;
                     }
+                    return true;
                 }
             });
             // execute the high selectivity first.
@@ -392,11 +394,9 @@ public class IdxTable {
             executor.awaitFinish();
             if (capture.tokens == null) {
                 System.err.println("All records selected");
-                throw new NoMatchException();
+                return Collections.emptySet();
             }
             return capture.tokens.getTokens();
-        } catch (NoMatchException e) {
-            return Collections.emptySet();
         } finally {
             executor.kill();
         }
