@@ -12,6 +12,8 @@ import java.util.PrimitiveIterator;
 
 import org.junit.Test;
 
+import com.instaclustr.cassandra.bloom.idx.mem.tables.LongBufferBitMap;
+
 public class LongBufferBitMapTest {
 
     LongBuffer left = LongBuffer.allocate(5);

@@ -19,12 +19,13 @@ package com.instaclustr.cassandra.bloom.idx.mem.tables;
 import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.util.Iterator;
-import java.util.NoSuchElementException;
-import java.util.concurrent.Callable;
+import java.util.concurrent.ConcurrentSkipListSet;
 import java.util.function.IntPredicate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import com.instaclustr.cassandra.bloom.idx.mem.tables.BaseTable.OutputTimeoutException;
+import com.instaclustr.cassandra.bloom.idx.mem.tables.BaseTable.RangeLock;
 
 /**
  * Manages a file that contains the offset of the index into a key file.
@@ -43,6 +44,9 @@ public class BufferTableIdx extends BaseTable implements AutoCloseable {
     private static byte mkMap(int bit) {
         return (byte) (1 << bit);
     }
+
+    private ConcurrentSkipListSet<IdxEntry> deletedEntries = new ConcurrentSkipListSet<>();
+    private volatile ByteBuffer buffer;
 
     /**
      * Flag for a deleted entry (available for reuse)
@@ -66,8 +70,8 @@ public class BufferTableIdx extends BaseTable implements AutoCloseable {
      * Package private so that other classes in this package can use it.
      *
      */
-    class IdxEntry {
-        private final ByteBuffer buffer;
+    class IdxEntry implements Comparable<IdxEntry> {
+
         // /**
         // * The block number for this entry
         // */
@@ -77,8 +81,10 @@ public class BufferTableIdx extends BaseTable implements AutoCloseable {
          */
         private int offset;
 
-        IdxEntry(ByteBuffer buffer, int block) {
-            this.buffer = buffer;
+        IdxEntry(int block) throws IOException {
+            if (!checkBlockAlignment(getFileSize(), BLOCK_SIZE)) {
+                throw new IllegalStateException("Blocks are not aligned with file");
+            }
             this.offset = block * BLOCK_SIZE;
         }
 
@@ -116,11 +122,23 @@ public class BufferTableIdx extends BaseTable implements AutoCloseable {
         private void setFlg(byte flag, boolean state) throws IOException {
             final ByteBuffer writeBuffer = getWritableBuffer();
             final int startByte = offset + FLAG_BYTE;
+            boolean wasAvailable = isAvailable();
             if (state) {
                 sync(() -> writeBuffer.put(startByte, (byte) (writeBuffer.get(startByte) | flag)), startByte, 1, 4);
             } else {
                 sync(() -> writeBuffer.put(startByte, (byte) (writeBuffer.get(startByte) & ~flag)), startByte, 1, 4);
             }
+            if (wasAvailable != isAvailable()) {
+                if (wasAvailable) {
+                    deletedEntries.remove(this);
+                } else {
+                    deletedEntries.add(this);
+                }
+            }
+        }
+
+        public RangeLock lock(int retryCount) throws OutputTimeoutException {
+            return getLock(offset, BLOCK_SIZE, retryCount);
         }
 
         /**
@@ -254,19 +272,53 @@ public class BufferTableIdx extends BaseTable implements AutoCloseable {
         public RangeLock lock() throws OutputTimeoutException {
             return getLock(offset, BLOCK_SIZE, 4);
         }
+
+        @Override
+        public int compareTo(IdxEntry arg0) {
+            int result = Integer.compare(getAlloc(), arg0.getAlloc());
+            if (result == 0) {
+                result = Integer.compare(getOffset(), arg0.getOffset());
+            }
+            return result;
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            return (obj instanceof IdxEntry) ? compareTo((IdxEntry) obj) == 0 : false;
+        }
+
+        @Override
+        public int hashCode() {
+            return getAlloc();
+        }
+
     }
 
     public static void main(String[] args) throws IOException {
-        File f = new File( args[0] );
+        File f = new File(args[0]);
         if (!f.exists()) {
-            System.err.println( String.format( "%s does not exist", f.getAbsoluteFile() ));
+            System.err.println(String.format("%s does not exist", f.getAbsoluteFile()));
         }
-        System.out.println( "'index','offset','available','deleted','initialized','invalid','used','allocated'");
-        try (BufferTableIdx idx = new BufferTableIdx( f )) {
-            int blocks = (int)idx.getFileSize() / idx.getBlockSize();
-            for (int block=0;block<blocks;block++) {
+
+        long position = f.length();
+        if ((position % BLOCK_SIZE) != 0) {
+            long lower = position - (position % BLOCK_SIZE);
+            long upper = lower + BLOCK_SIZE;
+            System.err.println(String.format("position does not allign with block size %s should be %s or %s.",
+                    position, lower, upper));
+        }
+
+        if ((f.length() % BLOCK_SIZE) != 0) {
+            long expected = f.length() - (f.length() % BLOCK_SIZE);
+            System.err
+                    .println(String.format("File has incorrect block size (%s) should be (%s).", f.length(), expected));
+        }
+        System.out.println("'index','offset','available','deleted','initialized','invalid','used','allocated'");
+        try (BufferTableIdx idx = new BufferTableIdx(f)) {
+            int blocks = (int) idx.getFileSize() / idx.getBlockSize();
+            for (int block = 0; block < blocks; block++) {
                 IdxEntry entry = idx.get(block);
-                System.out.println( String.format("%s,%s,%s,%s,%s,%s,%s,%s", block, entry.getOffset(),
+                System.out.println(String.format("%s,%s,%s,%s,%s,%s,%s,%s", block, entry.getOffset(),
                         entry.isAvailable(), entry.isDeleted(), entry.isInitialized(), entry.isInvalid(),
                         entry.getLen(), entry.getAlloc()));
             }
@@ -280,7 +332,26 @@ public class BufferTableIdx extends BaseTable implements AutoCloseable {
      */
     public BufferTableIdx(File bufferFile) throws IOException {
         super(bufferFile, BLOCK_SIZE);
+        this.buffer = getBuffer();
+        registerExtendNotification(() -> buffer = getBuffer());
+        executor.submit(() -> buildDeletedSet());
+    }
 
+    private void buildDeletedSet() {
+        try {
+            for (int i = 0; i < getFileSize() / getBlockSize(); i++) {
+                try {
+                    IdxEntry entry = new IdxEntry(i);
+                    if (entry.isAvailable()) {
+                        deletedEntries.add(entry);
+                    }
+                } catch (Exception e) {
+                    logger.error("Error building deleted set at block " + i);
+                }
+            }
+        } catch (Exception e) {
+            logger.error("Error building deleted set", e);
+        }
     }
 
     /**
@@ -291,83 +362,111 @@ public class BufferTableIdx extends BaseTable implements AutoCloseable {
      */
     public IdxEntry get(int block) throws IOException {
         ensureBlock(block + 1);
-        return new IdxEntry(getBuffer(), block);
+        return new IdxEntry(block);
     }
 
-    class Scanner implements Callable<Boolean>, Iterator<IdxEntry> {
+    // class Scanner implements Callable<Boolean>, Iterator<IdxEntry> {
+    //
+    // private ByteBuffer buffer;
+    // private final int length;
+    // private IdxEntry next;
+    // private int lastEntryBlock;
+    //
+    // Scanner(ByteBuffer buffer, int length) {
+    // this.buffer = buffer;
+    // this.length = length;
+    // this.next = null;
+    // this.lastEntryBlock = -1;
+    // }
+    //
+    // private boolean isMatch(IdxEntry entry) {
+    // if (logger.isDebugEnabled()) {
+    // logger.debug(String.format("isMatch checking %s: %2x,%d,%d,%d", entry.offset,
+    // buffer.get(entry.offset),
+    // buffer.get(entry.offset), buffer.getInt(entry.offset + OFFSET_BYTE),
+    // buffer.getInt(entry.offset + LEN_BYTE), buffer.getInt(entry.offset +
+    // ALLOC_BYTE)));
+    // }
+    // System.out.println(String.format("isMatch checking %s: %2x,%d,%d,%d",
+    // entry.offset, buffer.get(entry.offset),
+    // buffer.get(entry.offset), buffer.getInt(entry.offset + OFFSET_BYTE),
+    // buffer.getInt(entry.offset + LEN_BYTE), buffer.getInt(entry.offset +
+    // ALLOC_BYTE)));
+    // return entry.isAvailable() && entry.getAlloc() >= length;
+    // }
+    //
+    // @Override
+    // public boolean hasNext() {
+    // if (next != null) {
+    // return true;
+    // }
+    // try {
+    // IdxEntry entry = new IdxEntry(buffer, ++lastEntryBlock);
+    // while (entry.offset < getFileSize()) {
+    // if (entry.offset + BLOCK_SIZE > getFileSize()) {
+    // checkBlockAlignment(getFileSize(), BLOCK_SIZE);
+    // checkBlockAlignment(entry.offset, BLOCK_SIZE);
+    // throw new IllegalStateException(String.format("offset %s overlaps end of
+    // file", entry.offset));
+    // }
+    // if (entry.offset > buffer.limit()) {
+    // buffer = getBuffer();
+    // entry.buffer = buffer;
+    // }
+    // if (isMatch(entry)) {
+    // next = entry;
+    // lastEntryBlock = entry.getBlock();
+    // return true;
+    // }
+    // entry.offset += BLOCK_SIZE;
+    // }
+    // } catch (IOException e) {
+    // logger.error("Scanning error", e);
+    // return false;
+    // }
+    // return false;
+    // }
+    //
+    // public int getOffset() {
+    // if (hasNext()) {
+    // return next.offset;
+    // }
+    // throw new NoSuchElementException();
+    // }
+    //
+    // @Override
+    // public IdxEntry next() {
+    // if (hasNext()) {
+    // try {
+    // return next;
+    // } finally {
+    // next = null;
+    // }
+    //
+    // }
+    // throw new NoSuchElementException();
+    // }
+    //
+    // @Override
+    // public Boolean call() {
+    // if (hasNext() && isMatch(next)) {
+    // try {
+    // next.setDeleted(false);
+    // next.setInitialized(false);
+    // return true;
+    // } catch (IOException e) {
+    // throw new RuntimeException(e);
+    // }
+    // }
+    // return false;
+    // }
+    //
+    // }
 
-        private final ByteBuffer buffer;
-        private final int length;
-        private IdxEntry next;
-        private int lastEntryBlock;
-
-        Scanner(ByteBuffer buffer, int length) {
-            this.buffer = buffer;
-            this.length = length;
-            this.next = null;
-            this.lastEntryBlock = -1;
-        }
-
-        private boolean isMatch(IdxEntry entry) {
-            return entry.isAvailable() && entry.getAlloc() >= length;
-        }
-
-        @Override
-        public boolean hasNext() {
-            if (next != null) {
-                return true;
-            }
-            IdxEntry entry = new IdxEntry(buffer, ++lastEntryBlock);
-            try {
-                while (entry.offset < getFileSize()) {
-                    if (isMatch(entry)) {
-                        next = entry;
-                        lastEntryBlock = entry.getBlock();
-                        return true;
-                    }
-                    entry.offset += BLOCK_SIZE;
-                }
-            } catch (IOException e) {
-                logger.error("Scanning error", e);
-                return false;
-            }
-            return false;
-        }
-
-        public int getOffset() {
-            if (hasNext()) {
-                return next.offset;
-            }
-            throw new NoSuchElementException();
-        }
-
-        @Override
-        public IdxEntry next() {
-            if (hasNext()) {
-                try {
-                    return next;
-                } finally {
-                    next = null;
-                }
-
-            }
-            throw new NoSuchElementException();
-        }
-
-        @Override
-        public Boolean call() {
-            if (hasNext() && isMatch(next)) {
-                try {
-                    next.setDeleted(false);
-                    next.setInitialized(false);
-                    return true;
-                } catch (IOException e) {
-                    throw new RuntimeException(e);
-                }
-            }
-            return false;
-        }
-
+    @Override
+    public void close() throws IOException {
+        super.close();
+        deletedEntries = null;
     }
 
     /**
@@ -378,15 +477,39 @@ public class BufferTableIdx extends BaseTable implements AutoCloseable {
      * @throws IOException
      */
     public IdxEntry search(int length) throws IOException {
-        ByteBuffer buffer = getBuffer();
-        Scanner scanner = new Scanner(buffer, length);
+        if (!deletedEntries.isEmpty()) {
+            IdxEntry entry = new IdxEntry(-1) {
 
-        while (scanner.hasNext()) {
-            if (sync(scanner, scanner.getOffset(), BLOCK_SIZE, 4)) {
-                return scanner.next();
+                @Override
+                int getOffset() {
+                    return -1;
+                }
+
+                @Override
+                int getAlloc() {
+                    return length;
+                }
+            };
+            IdxEntry idx = deletedEntries.higher(entry);
+            boolean good = false;
+
+            try {
+                good = sync(() -> {
+                    if (idx.isAvailable()) {
+                        idx.setDeleted(false);
+                        idx.setInitialized(false);
+                        return true;
+                    } else {
+                        return false;
+                    }
+                }, idx.offset, BLOCK_SIZE, 0);
+                if (good) {
+                    deletedEntries.remove(idx);
+                    return idx;
+                }
+            } catch (IOException e) {
+                // fall through
             }
-            // skip the last result
-            scanner.next();
         }
         return null;
     }
@@ -402,7 +525,7 @@ public class BufferTableIdx extends BaseTable implements AutoCloseable {
      */
     public IdxEntry addBlock(int offset, int len) throws IOException {
         try (RangeLock lock = getLock(extendBuffer(1), BLOCK_SIZE, 4)) {
-            IdxEntry idxEntry = new IdxEntry(getBuffer(), lock.getStart() / BLOCK_SIZE);
+            IdxEntry idxEntry = new IdxEntry(lock.getStart() / BLOCK_SIZE);
             idxEntry.setLen(len);
             idxEntry.setAlloc(len);
             idxEntry.setOffset(offset);
@@ -416,7 +539,8 @@ public class BufferTableIdx extends BaseTable implements AutoCloseable {
      * @throws IOException on IO Error.
      */
     public void deleteBlock(int block) throws IOException {
-        IdxEntry idxEntry = new IdxEntry(getBuffer(), block);
+        IdxEntry idxEntry = new IdxEntry(block);
         idxEntry.setDeleted(true);
+        deletedEntries.add(idxEntry);
     }
 }

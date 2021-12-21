@@ -19,10 +19,12 @@ package com.instaclustr.cassandra.bloom.idx.mem;
 import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
+import java.util.Stack;
 import java.util.function.Consumer;
 import java.util.function.IntConsumer;
 
@@ -38,16 +40,20 @@ import org.apache.cassandra.db.ReadExecutionController;
 import org.apache.cassandra.db.SinglePartitionReadCommand;
 import org.apache.cassandra.db.WriteContext;
 import org.apache.cassandra.db.compaction.CompactionManager;
+import org.apache.cassandra.db.filter.ColumnFilter;
 import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.db.marshal.BytesType;
 import org.apache.cassandra.db.marshal.Int32Type;
 import org.apache.cassandra.db.partitions.PartitionUpdate;
 import org.apache.cassandra.db.rows.BTreeRow;
+import org.apache.cassandra.db.rows.BufferCell;
+import org.apache.cassandra.db.rows.Cell;
 import org.apache.cassandra.db.rows.Row;
 import org.apache.cassandra.db.rows.RowIterator;
 import org.apache.cassandra.db.transform.FilteredRows;
 import org.apache.cassandra.dht.LocalPartitioner;
 import org.apache.cassandra.index.transactions.UpdateTransaction;
+import org.apache.cassandra.schema.ColumnMetadata;
 import org.apache.cassandra.schema.IndexMetadata;
 import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.schema.TableMetadataRef;
@@ -55,7 +61,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.instaclustr.cassandra.bloom.idx.mem.tables.BaseTable;
+import com.instaclustr.cassandra.bloom.idx.mem.tables.BaseTable.Func;
+import com.instaclustr.cassandra.bloom.idx.mem.tables.BaseTable.OutputTimeoutException;
 import com.instaclustr.cassandra.bloom.idx.mem.tables.BufferTable;
+import com.instaclustr.cassandra.bloom.idx.std.IndexKey;
 
 /**
  * Handles all IO to the index table.
@@ -68,7 +77,7 @@ public class FlatBloomingIndexSerde {
     /**
      * We use this as the block size for the key buffer table.
      */
-    private static final int AVERAGE_KEY_SIZE = 1024;
+    private static final int AVERAGE_KEY_SIZE = Long.BYTES;
 
     /**
      * The index table.
@@ -77,6 +86,7 @@ public class FlatBloomingIndexSerde {
 
     private final FlatBloofi flatBloofi;
     private final BufferTable keyTable;
+    private final ColumnMetadata idxColumn;
 
     /**
      * Construct the BloomingIndex serializer/deserializer.
@@ -88,15 +98,24 @@ public class FlatBloomingIndexSerde {
      */
     public FlatBloomingIndexSerde(File dir, ColumnFamilyStore baseCfs, IndexMetadata indexMetadata, int numberOfBits) {
 
+        ByteBuffer idxColumnName = ByteBuffer.wrap("idx".getBytes(StandardCharsets.UTF_8));
         TableMetadata baseCfsMetadata = baseCfs.metadata();
         TableMetadata.Builder builder = TableMetadata
                 .builder(baseCfsMetadata.keyspace, baseCfsMetadata.indexTableName(indexMetadata), baseCfsMetadata.id)
-                .kind(TableMetadata.Kind.INDEX).partitioner(new LocalPartitioner(BytesType.instance))
-                .addPartitionKeyColumn("dataKey", BytesType.instance).addClusteringColumn("idx", Int32Type.instance);
+                .kind(TableMetadata.Kind.INDEX).partitioner(new LocalPartitioner(BytesType.instance));
+
+        for (ColumnMetadata partitionColumn : baseCfsMetadata.partitionKeyColumns()) {
+            builder.addPartitionKeyColumn(partitionColumn.name, partitionColumn.type);
+        }
+        for (ColumnMetadata clusteringColumn : baseCfsMetadata.clusteringColumns()) {
+            builder.addClusteringColumn(clusteringColumn.name, clusteringColumn.type);
+        }
+        builder.addRegularColumn("idx", Int32Type.instance);
 
         TableMetadataRef tableRef = TableMetadataRef
                 .forOfflineTools(builder.build().updateIndexTableMetadata(baseCfsMetadata.params));
 
+        idxColumn = tableRef.get().getColumn(idxColumnName);
         indexCfs = ColumnFamilyStore.createColumnFamilyStore(baseCfs.keyspace, tableRef.name, tableRef,
                 baseCfs.getTracker().loadsstables);
 
@@ -172,7 +191,6 @@ public class FlatBloomingIndexSerde {
         return indexCfs.decorateKey(value);
     }
 
-
     /**
      * Constructs the clustering for an entry in the index table based on values from the base data.
      * The clustering columns in the index table encode the values required to retrieve the correct data
@@ -186,25 +204,80 @@ public class FlatBloomingIndexSerde {
         CBuilder builder = CBuilder.create(getIndexComparator());
 
         builder.add(rowKey.getKey());
-        List<AbstractType<?>> types = new ArrayList<>(clustering.size()+1);
-        types.add( BytesType.instance );
+        List<AbstractType<?>> types = new ArrayList<>(clustering.size() + 1);
+        types.add(BytesType.instance);
         for (int i = 0; i < clustering.size(); i++) {
             builder.add(clustering.get(i), clustering.accessor());
-            types.add( BytesType.instance );
+            types.add(BytesType.instance);
         }
 
         ByteBuffer result = Clustering.serializer.serialize(builder.build(), 0x0a, types);
         return getIndexKeyFor(result);
     }
 
-    private Clustering<?> buildClustering(int idx) {
-        byte[] bytes = new byte[Integer.BYTES];
-        ByteBuffer buffer = ByteBuffer.wrap(bytes);
-        buffer.putInt(idx);
-        buffer.flip();
+    /**
+     * Constructs the clustering for an entry in the index table based on values from the base data.
+     * The clustering columns in the index table encode the values required to retrieve the correct data
+     * from the base table and varies depending on the kind of the indexed column.  Used whenever a row
+     * in the index table is written or deleted.
+     * @param rowKey the key from the row in the base table being indexed.
+     * @param clustering the clustering from the row in the base table being indexed.
+     * @return a clustering to be inserted into the index table.
+     */
+    public <T> Clustering<?> buildIndexClustering(Clustering<T> clustering) {
         CBuilder builder = CBuilder.create(getIndexComparator());
-        builder.add(buffer);
+        for (int i = 0; i < clustering.size(); i++)
+            builder.add(clustering.get(i), clustering.accessor());
         return builder.build();
+    }
+
+    private void doInsert(int idx, DecoratedKey rowKey, ByteBuffer bloomFilter, Clustering<?> clustering,
+            long timestamp, WriteContext ctx) throws IOException {
+        if (rowKey.getKey().remaining() == 0) {
+            logger.error("Invalid key length for {}", rowKey);
+        }
+
+        /* create new record */
+        if (idx < 0) {
+            idx = flatBloofi.add(bloomFilter);
+            boolean loop = true;
+            while (loop)
+                try {
+                    /* write the row key to the key Table */
+                    keyTable.set(idx, rowKey.getKey());
+                    loop = false;
+                } catch (OutputTimeoutException e) {
+                    logger.debug("Timeout trying to write keyTable entry for {}.  Trying again.", idx);
+                } catch (IOException e) {
+                    logger.warn("Error {} trying to write tkeyTable entry for {}", e, idx);
+                    throw e;
+                }
+        }
+
+        /* write the index entry */
+        Clustering<?> indexClustering = buildIndexClustering(clustering);
+        ByteBuffer bb = ByteBuffer.allocate(Integer.BYTES);
+        bb.putInt(idx);
+        bb.flip();
+        Cell<ByteBuffer> cell = BufferCell.live(idxColumn, timestamp, bb);
+        Row btRow = BTreeRow.singleCellRow(indexClustering, cell);
+        PartitionUpdate upd = partitionUpdate(convertToIndexKey(rowKey), btRow);
+        indexCfs.getWriteHandler().write(upd, ctx, UpdateTransaction.NO_OP);
+
+    }
+
+    public void retryOnTimeout( Func fn ) throws Exception {
+        while (true) {
+            try {
+                fn.call();
+                return;
+            } catch (OutputTimeoutException e) {
+                logger.debug( "Timeout  executing {}, trying again", fn);
+            } catch (Exception e) {
+                logger.warn( "Error {} attempting {}", e, fn);
+                throw e;
+            }
+        }
     }
 
     /**
@@ -214,32 +287,17 @@ public class FlatBloomingIndexSerde {
      * @param clustering the clustering for the row being indexed.
      * @param info the liveness of the primary key columns of the index row
      * @param ctx the write context to write with.
+     * @throws IOException on IOError
      */
-    public void insert(int nowInSec, DecoratedKey rowKey, Clustering<?> clustering, LivenessInfo info, WriteContext ctx,
-            ByteBuffer bloomFilter) {
-        logger.trace("Inserting {}", rowKey);
+    public void insert(int nowInSec, DecoratedKey rowKey, Row row, long timestamp, WriteContext ctx,
+            ByteBuffer bloomFilter) throws IOException {
+        logger.debug("Inserting {}", row);
+        int idx = read(nowInSec, rowKey, row.clustering());
 
-        int idx = read(nowInSec, rowKey, clustering);
-        try {
-            if (idx < 0) {
-                // new record
-                idx = flatBloofi.add(bloomFilter);
-                DecoratedKey valueKey = buildIndexKey(rowKey, clustering);
-                if (valueKey.getKey().remaining() == 0) {
-                    logger.error( "Invalid key length for %s and %s", rowKey, clustering );
-                }
-                keyTable.set(idx, valueKey.getKey());
-                Clustering<?> indexClustering = buildClustering(idx);
-                Row row = BTreeRow.noCellLiveRow(indexClustering, info);
-                PartitionUpdate upd = partitionUpdate(valueKey, row);
-                indexCfs.getWriteHandler().write(upd, ctx, UpdateTransaction.NO_OP);
-                logger.trace("Inserted entry into index as {} for row {}", idx, rowKey);
-            } else {
-                flatBloofi.update(idx, bloomFilter);
-                logger.trace("Updated entry into index as {} for row {}", idx, rowKey);
-            }
-        } catch (IOException e) {
-            throw new RuntimeException("Unable to read from index", e);
+        if (idx < 0) {
+            flatBloofi.exec( () -> retryOnTimeout( () -> doInsert(idx, rowKey, bloomFilter, row.clustering(), timestamp, ctx) ) );
+        } else {
+            flatBloofi.exec( ()-> retryOnTimeout( () -> flatBloofi.update(idx, bloomFilter) ));
         }
 
     }
@@ -253,24 +311,44 @@ public class FlatBloomingIndexSerde {
      * @param deletedAt the time when the row was deleted
      * @param ctx the write context to write with.
      */
-    public void delete(DecoratedKey rowKey, Clustering<?> clustering, DeletionTime deletedAt, WriteContext ctx) {
+    public void delete(DecoratedKey rowKey, Row row, DeletionTime deletedAt, WriteContext ctx) {
         logger.trace("Deleting {}", rowKey);
-        int idx = read(deletedAt.localDeletionTime(), rowKey, clustering);
+        int idx = read(deletedAt.localDeletionTime(), rowKey, row.clustering());
         if (idx != BufferTable.UNSET) {
-            try {
-                flatBloofi.delete(idx);
-                keyTable.delete(idx);
-            } catch (IOException e) {
-                logger.warn(String.format("Error attempting to delete %s (%s}", idx, rowKey), e);
-            }
+
+            flatBloofi.exec( () -> retryOnTimeout( () -> flatBloofi.delete(idx) ));
+            keyTable.exec( ()-> retryOnTimeout( () -> keyTable.delete(idx) ));
+
         }
 
-        DecoratedKey valueKey = buildIndexKey(rowKey, clustering);
-        Clustering<?> indexClustering = buildClustering(idx);
-        Row row = BTreeRow.emptyDeletedRow(indexClustering, Row.Deletion.regular(deletedAt));
-        PartitionUpdate upd = partitionUpdate(valueKey, row);
+        Clustering<?> indexClustering = buildIndexClustering(row.clustering());
+        Row btRow = BTreeRow.emptyDeletedRow(indexClustering, Row.Deletion.regular(deletedAt));
+        PartitionUpdate upd = partitionUpdate(rowKey, btRow);
         indexCfs.getWriteHandler().write(upd, ctx, UpdateTransaction.NO_OP);
-        logger.trace("Removed index entry for value {}", valueKey);
+        logger.trace("Removed index entry for value {}", rowKey);
+    }
+
+    /**
+     * Deletes an entry from the index table.
+     *
+     * @param indexKey The index key to delete.
+     * @param rowKey the key for the row being indexed.
+     * @param clustering the clustering for the row being indexed.
+     * @param deletedAt the time when the row was deleted
+     * @param ctx the write context to write with.
+     */
+    public boolean update(DecoratedKey rowKey, Row row, int nowInSec) {
+        logger.debug("Updating {}", rowKey);
+        int idx = read(nowInSec, rowKey, row.clustering());
+        if (idx != BufferTable.UNSET) {
+            try {
+                flatBloofi.update(idx, row.getCell(idxColumn).buffer());
+                return true;
+            } catch (IOException e) {
+                logger.warn(String.format("Error attempting to update %s (%s}", idx, rowKey), e);
+            }
+        }
+        return false;
     }
 
     public void search(Consumer<ByteBuffer> consumer, ByteBuffer bloomFilter) throws IOException {
@@ -279,7 +357,10 @@ public class FlatBloomingIndexSerde {
             @Override
             public void accept(int idx) {
                 try {
-                    consumer.accept(keyTable.get(idx));
+                    ByteBuffer bb = keyTable.get(idx);
+                    if (bb != null) {
+                        consumer.accept(bb);
+                    }
                 } catch (IOException e) {
                     logger.warn(String.format("Error retrieve key for index %s", idx), e);
                 }
@@ -331,6 +412,10 @@ public class FlatBloomingIndexSerde {
     //
     // }
 
+    private DecoratedKey convertToIndexKey(DecoratedKey rowKey) {
+        return indexCfs.decorateKey(rowKey.getKey());
+    }
+
     /**
      * Reads the index table for all entries with the IndexKey.
      * @param indexKey the key to locate.
@@ -339,11 +424,16 @@ public class FlatBloomingIndexSerde {
      * @return the UnfilteredRowIterator containing all matching entries.
      */
     private int read(int nowInSec, DecoratedKey rowKey, Clustering<?> clustering) {
-        TableMetadata indexMetadata = indexCfs.metadata();
-        DecoratedKey valueKey = buildIndexKey(rowKey, clustering);
-
-        SinglePartitionReadCommand readCommand = SinglePartitionReadCommand.create(indexMetadata, nowInSec, valueKey,
-                Clustering.EMPTY);
+        // TableMetadata indexMetadata = indexCfs.metadata();
+        // DecoratedKey valueKey = buildIndexKey(rowKey, clustering);
+        /*
+         * return SinglePartitionReadCommand.create(indexMetadata, command.nowInSec(),
+         * indexKey, ColumnFilter.all(indexMetadata), filter)
+         * .queryMemtableAndDisk(indexCfs, executionController.indexReadController());
+         *
+         */
+        SinglePartitionReadCommand readCommand = SinglePartitionReadCommand.create(indexCfs.metadata(), nowInSec,
+                convertToIndexKey(rowKey), clustering);
         try (ReadExecutionController readExecutionController = readCommand.executionController();
                 RowIterator rowIter = FilteredRows
                         .filter(readCommand.queryMemtableAndDisk(indexCfs, readExecutionController), nowInSec)) {
@@ -352,9 +442,9 @@ public class FlatBloomingIndexSerde {
                 return BufferTable.UNSET;
             }
 
-            int result = rowIter.next().clustering().bufferAt(0).asIntBuffer().get(0);
+            int result = rowIter.next().getCell(idxColumn).buffer().asIntBuffer().get();
             if (rowIter.hasNext()) {
-                throw new IllegalStateException(String.format("Too many results for %s", valueKey));
+                throw new IllegalStateException(String.format("Too many results for %s", rowKey));
             }
             return result;
         }

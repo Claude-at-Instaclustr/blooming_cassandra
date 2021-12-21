@@ -22,6 +22,8 @@ import java.nio.ByteBuffer;
 import java.nio.LongBuffer;
 import java.util.Iterator;
 import java.util.concurrent.Callable;
+import java.util.concurrent.TimeUnit;
+
 import org.apache.commons.collections4.bloomfilter.BitMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -31,12 +33,26 @@ public class BitTable extends BaseTable implements AutoCloseable {
 
     private LongBuffer writeBuffer;
 
+    private volatile int lowestDeletedBlock = 0;
+
     public BitTable(File busyFile) throws IOException {
         super(busyFile, Long.BYTES);
         super.registerExtendNotification(() -> {
             writeBuffer = getWritableLongBuffer();
         });
         writeBuffer = getWritableLongBuffer();
+        executor.scheduleWithFixedDelay(() -> scanForLowest(), 0, 5, TimeUnit.MINUTES);
+    }
+
+    private void scanForLowest() {
+        LongBuffer buff = writeBuffer.duplicate();
+        long full = ~0L;
+        for (int i = 0; i < buff.limit(); i++) {
+            lowestDeletedBlock = i;
+            if (buff.get() != full) {
+                return;
+            }
+        }
     }
 
     @Override
@@ -65,7 +81,7 @@ public class BitTable extends BaseTable implements AutoCloseable {
          */
         IndexScanner(int maxBlock) {
             this.maxBlock = maxBlock;
-            this.block = 0;
+            this.block = lowestDeletedBlock;
             this.next = null;
         }
 
@@ -98,12 +114,18 @@ public class BitTable extends BaseTable implements AutoCloseable {
                     while (blockIdx < Long.SIZE) {
                         mask = BitMap.getLongBit(blockIdx);
                         if (matches()) {
+                            if (lowestDeletedBlock < block) {
+                                lowestDeletedBlock = block;
+                            }
                             return true;
                         }
                         blockIdx++;
                     }
                 }
                 block++;
+                if (block < lowestDeletedBlock) {
+                    block = lowestDeletedBlock;
+                }
             }
             return false;
         }
@@ -136,18 +158,21 @@ public class BitTable extends BaseTable implements AutoCloseable {
      * @throws IOException on IO Error
      */
     public int newIndex() throws IOException {
-
         IndexScanner scanner = new IndexScanner(writeBuffer.limit());
-        while (scanner.hasNext()) {
-            try {
-                if (sync(scanner, scanner.getBlock() * Long.BYTES, Long.BYTES, 4)) {
-                    return scanner.next();
+        try {
+            while (scanner.hasNext()) {
+                try {
+                    if (sync(scanner, scanner.getBlock() * Long.BYTES, Long.BYTES, 4)) {
+                        return scanner.next();
+                    }
+                } catch (OutputTimeoutException e) {
+                    logger.warn("newIndex timeout: {} trying again", e.getMessage());
+                    // skip the entry
+                    scanner.next();
                 }
-            } catch (IOException e) {
-                logger.warn("newIndex failure: {}", e.getMessage());
-                // skip the entry
-                scanner.next();
             }
+        }catch (IOException e) {
+            logger.warn("newIndex failure: {}, creating new entry", e.getMessage());
         }
         // there is no old index so create a new one.
         try (RangeLock lock = getLock(extendBuffer(), Long.BYTES, 4)) {
@@ -167,9 +192,11 @@ public class BitTable extends BaseTable implements AutoCloseable {
     public void clear(int idx) throws IOException {
         checkGEZero(idx, "index");
         int wordIdx = BitMap.getLongIndex(idx);
-        sync(() -> writeBuffer.put(wordIdx, writeBuffer.get(wordIdx) & ~BitMap.getLongBit(idx)), wordIdx * Long.BYTES,
-                Long.BYTES, 4);
-
+        long mask = BitMap.getLongBit(idx);
+        sync(() -> writeBuffer.put(wordIdx, writeBuffer.get(wordIdx) & ~mask), wordIdx * Long.BYTES, Long.BYTES, 4);
+        if (wordIdx < lowestDeletedBlock) {
+            lowestDeletedBlock = wordIdx;
+        }
     }
 
     /**

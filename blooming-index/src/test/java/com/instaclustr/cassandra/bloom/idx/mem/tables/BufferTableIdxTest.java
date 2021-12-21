@@ -200,12 +200,9 @@ public class BufferTableIdxTest {
             assertTrue(entry1.isDeleted());
             assertFalse(entry2.isDeleted());
 
-            // verify scanner
-
-            BufferTableIdx.Scanner scanner = idxTable.new Scanner(idxTable.getBuffer(), 0);
-            assertTrue(scanner.hasNext());
-            assertEquals(entry1.getBlock(), scanner.next().getBlock());
-            assertFalse(scanner.hasNext());
+            // verify deleted list
+            IdxEntry entry = idxTable.search(  500 );
+            assertEquals( entry1, entry );
             assertNoLocks(idxTable);
         }
 

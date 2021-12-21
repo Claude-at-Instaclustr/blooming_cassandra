@@ -33,6 +33,7 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
@@ -61,8 +62,9 @@ public class BaseTable implements AutoCloseable {
     private final int blockSize;
     private int extensionBlockSize;
     private final Map<Integer, ReentrantLock> blockLocks = new ConcurrentHashMap<Integer, ReentrantLock>();
-    private final ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor();
+    protected final ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor();
     private final List<Func> extendNotify = new CopyOnWriteArrayList<Func>();
+
     protected final Runnable blockLogsCleanup = new Runnable() {
         @Override
         public void run() {
@@ -78,6 +80,8 @@ public class BaseTable implements AutoCloseable {
         }
     };
 
+    private ByteBuffer buffer;
+
     /**
      * Constructor
      * @param file The file to use.
@@ -91,6 +95,25 @@ public class BaseTable implements AutoCloseable {
         this.blockSize = blockSize;
         this.extensionBlockSize = blockSize;
         this.executor.scheduleWithFixedDelay(blockLogsCleanup, 1000 * 5 * 50, 5, TimeUnit.MINUTES);
+        FileChannel fileChannel = raFile.getChannel();
+        long size = fileChannel.size();
+        this.buffer = fileChannel.map(MapMode.READ_WRITE, 0, size);
+    }
+
+    public Future<?> exec(Func fn) {
+        return executor.submit(fn.asCallable());
+    }
+
+    public void requeue(Func fn) {
+        executor.submit(() -> {
+            try {
+                fn.call();
+            } catch (OutputTimeoutException e) {
+                requeue(fn);
+            } catch (Exception e) {
+                getLogger().error("Error during requeue", e);
+            }
+        });
     }
 
     protected void setExtensionBlockSize(int extensionBlockSize) {
@@ -186,19 +209,12 @@ public class BaseTable implements AutoCloseable {
     @Override
     public void close() throws IOException {
         this.executor.shutdownNow();
+        try {
+            this.executor.awaitTermination(1, TimeUnit.MINUTES);
+        } catch (InterruptedException e) {
+            getLogger().error("Timeout waiting for executor to stop", e);
+        }
         this.raFile.close();
-    }
-
-    /**
-     * Get the buffer based for the mode.
-     * @param mode the mode to retrieve the buffer in.
-     * @return The ByteBuffer for this table.
-     * @throws IOException on IO Error
-     */
-    private final ByteBuffer getBuffer(MapMode mode) throws IOException {
-        FileChannel fileChannel = raFile.getChannel();
-        long size = fileChannel.size();
-        return fileChannel.map(mode, 0, size);
     }
 
     /**
@@ -254,6 +270,24 @@ public class BaseTable implements AutoCloseable {
         if (value < 0) {
             throw new IllegalArgumentException(String.format("%s (%s) may not be less than zero (0)", name, value));
         }
+    }
+
+    /**
+     * checks that a position is on a block boundary.
+     *
+     * If the position is not on a buffer boundary a warning is printed in the log.
+     * @param position the position to check.
+     * @param blockSize the expected size of blocks in the system.
+     * @return {@code true} if the position aligned with the block size, {@code false} otherwise.
+     */
+    protected boolean checkBlockAlignment(long position, int blockSize) {
+        if ((position % blockSize) != 0) {
+            long lower = position - (position % blockSize);
+            long upper = lower + blockSize;
+            getLogger().warn("position does not allign with block size {} should be {} or {}.", position, lower, upper);
+            return false;
+        }
+        return true;
     }
 
     /**
@@ -400,7 +434,7 @@ public class BaseTable implements AutoCloseable {
         // Get direct long buffer access using channel.map() operation
         int result = (int) fileChannel.size();
         long size = fileChannel.size() + (blocks * extensionBlockSize);
-        fileChannel.map(MapMode.READ_WRITE, 0, size);
+        buffer = fileChannel.map(MapMode.READ_WRITE, 0, size);
         extendNotify.forEach(f -> execQuietly(f));
         return result;
     }
@@ -421,7 +455,8 @@ public class BaseTable implements AutoCloseable {
 
         int result = (int) fileChannel.size();
         long size = fileChannel.size() + bytes;
-        fileChannel.map(MapMode.READ_WRITE, 0, size);
+        buffer = fileChannel.map(MapMode.READ_WRITE, 0, size);
+        extendNotify.forEach(f -> execQuietly(f));
         return result;
     }
 
@@ -431,7 +466,7 @@ public class BaseTable implements AutoCloseable {
      * @throws IOException on IOError
      */
     protected final ByteBuffer getBuffer() throws IOException {
-        return getBuffer(MapMode.READ_ONLY).asReadOnlyBuffer();
+        return buffer.asReadOnlyBuffer();
     }
 
     /**
@@ -440,7 +475,7 @@ public class BaseTable implements AutoCloseable {
      * @throws IOException on IOError
      */
     protected final ByteBuffer getWritableBuffer() throws IOException {
-        return getBuffer(MapMode.READ_WRITE);
+        return buffer.duplicate();
     }
 
     /**
@@ -449,7 +484,7 @@ public class BaseTable implements AutoCloseable {
      * @throws IOException on IOError
      */
     protected final IntBuffer getIntBuffer() throws IOException {
-        return getBuffer().asIntBuffer().duplicate();
+        return getBuffer().asIntBuffer();
     }
 
     /**
@@ -458,7 +493,7 @@ public class BaseTable implements AutoCloseable {
      * @throws IOException on IOError
      */
     protected final IntBuffer getWritableIntBuffer() throws IOException {
-        return getBuffer(MapMode.READ_WRITE).asIntBuffer();
+        return getWritableBuffer().asIntBuffer();
     }
 
     /**
@@ -467,7 +502,7 @@ public class BaseTable implements AutoCloseable {
      * @throws IOException on IOError
      */
     protected final LongBuffer getLongBuffer() throws IOException {
-        return getBuffer().asLongBuffer().duplicate();
+        return getBuffer().asLongBuffer();
     }
 
     /**
@@ -476,7 +511,7 @@ public class BaseTable implements AutoCloseable {
      * @throws IOException on IOError
      */
     protected final LongBuffer getWritableLongBuffer() throws IOException {
-        return getBuffer(MapMode.READ_WRITE).asLongBuffer();
+        return getWritableBuffer().asLongBuffer();
     }
 
     /**

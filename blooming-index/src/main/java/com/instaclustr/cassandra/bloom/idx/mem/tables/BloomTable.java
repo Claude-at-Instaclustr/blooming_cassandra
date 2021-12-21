@@ -21,10 +21,12 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.LongBuffer;
 import java.util.PrimitiveIterator;
+import java.util.concurrent.Future;
 import java.util.function.IntConsumer;
 import org.apache.commons.collections4.bloomfilter.BitMap;
-import com.instaclustr.cassandra.bloom.idx.mem.LongBufferBitMap;
+
 import com.instaclustr.cassandra.bloom.idx.mem.tables.BaseTable.Func;
+import com.instaclustr.cassandra.bloom.idx.mem.tables.BaseTable.OutputTimeoutException;
 
 /**
  * This is the core of the Bloofi implementation.
@@ -55,6 +57,13 @@ public class BloomTable implements AutoCloseable {
         this.bitTable.setExtensionBlockSize(bufferCalc.lengthInBytes);
     }
 
+    public Future<?> exec( Func fn ) {
+        return bitTable.exec(fn);
+    }
+    public void requeue( Func fn ) {
+        bitTable.requeue( fn );;
+    }
+
     /**
      * Sets the bloom filter at the index position in the table.
      * @param idx the index of the Bloom filter.
@@ -64,7 +73,6 @@ public class BloomTable implements AutoCloseable {
     public void setBloomAt(int idx, LongBuffer bloomFilter) throws IOException {
         bitTable.ensureBlock(bufferCalc.getNumberOfBlocks(idx));
 
-        long fileSize = bitTable.getFileSize();
         LongBufferBitMap bloomBitMap = new LongBufferBitMap(bloomFilter);
         // for each enabled bit in the Bloom filter enable the idx bit in
         // the associated mappedBits.

@@ -20,13 +20,17 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.Stack;
+import java.util.concurrent.Future;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import com.instaclustr.cassandra.bloom.idx.mem.tables.BufferTableIdx.IdxEntry;
 import com.instaclustr.cassandra.bloom.idx.mem.tables.IdxMap.MapEntry;
 
-import net.jpountz.util.ByteBufferUtils;
-
 public class BufferTable extends BaseTable {
+
+    private static final Logger LOG = LoggerFactory.getLogger(BufferTable.class);
 
     public static final int UNSET = -1;
     final IdxMap idxTable;
@@ -61,7 +65,7 @@ public class BufferTable extends BaseTable {
                     if (value == null) {
                         System.out.println(",");
                     } else {
-                        System.out.print( "'0x");
+                        System.out.print("'0x");
                         for (int i = 0; i < idxEntry.getLen(); i++) {
                             System.out.print(String.format("%2x", value.get(value.position() + i)));
                         }
@@ -86,14 +90,18 @@ public class BufferTable extends BaseTable {
 
     public ByteBuffer get(int idx) throws IOException {
         if (!idxTable.hasBlock(idx)) {
+            LOG.warn("Attempted to retrieve unknown record {}.   Block not in index table.", idx);
             return null;
         }
         IdxMap.MapEntry mapEntry = idxTable.get(idx);
         if (!mapEntry.isInitialized()) {
+            LOG.warn("Attempted to retrieve unknown record {}.   Map to {} not initialized.", idx,
+                    mapEntry.getKeyIdx());
             return null;
         }
         BufferTableIdx.IdxEntry idxEntry = keyTableIdx.get(mapEntry.getKeyIdx());
         if (idxEntry.isDeleted()) {
+            LOG.info("Attempted to retrieve deleted record {}.", idx);
             return null;
         }
         ByteBuffer buff = getBuffer();
@@ -154,7 +162,7 @@ public class BufferTable extends BaseTable {
                 deleteKey.setDeleted(true);
             });
         } catch (IOException e1) {
-            // ignore an try to create a new one.
+            // ignore and try to create a new one.
         }
         try {
             if (keyIdxEntry == null) {
@@ -182,11 +190,18 @@ public class BufferTable extends BaseTable {
         if (mapEntry.isInitialized()) {
             // we are reusing the key so see if the buffer fits.
             BufferTableIdx.IdxEntry keyIdxEntry = keyTableIdx.get(mapEntry.getKeyIdx());
-            if (keyIdxEntry.getAlloc() > buff.remaining()) {
+            if (keyIdxEntry.getAlloc() >= buff.remaining()) {
                 setKey(keyIdxEntry, buff);
             } else {
                 // buffer did not fit so we need a new one and we need to free the old one.
-                BufferTableIdx.IdxEntry newKeyIdxEntry = createNewEntry(idx, buff);
+                BufferTableIdx.IdxEntry newKeyIdxEntry = null;
+                while (newKeyIdxEntry == null) {
+                    try {
+                        newKeyIdxEntry = createNewEntry(idx, buff);
+                    } catch (IOException e) {
+                        LOG.info(String.format("Problems creating new entry for %s", idx), e);
+                    }
+                }
                 mapEntry.setKeyIdx(newKeyIdxEntry.getBlock());
                 keyIdxEntry.setDeleted(true);
             }
@@ -201,7 +216,9 @@ public class BufferTable extends BaseTable {
         IdxMap.MapEntry mapEntry = idxTable.get(idx);
         if (mapEntry.isInitialized()) {
             BufferTableIdx.IdxEntry keyIdx = keyTableIdx.get(mapEntry.getKeyIdx());
-            keyIdx.setDeleted(true);
+            try (RangeLock keyLock = keyIdx.lock(Integer.MAX_VALUE)) {
+                keyIdx.setDeleted(true);
+            }
         }
     }
 }

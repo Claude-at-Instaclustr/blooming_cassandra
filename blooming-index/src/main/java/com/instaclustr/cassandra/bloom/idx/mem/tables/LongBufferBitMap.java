@@ -1,4 +1,4 @@
-package com.instaclustr.cassandra.bloom.idx.mem;
+package com.instaclustr.cassandra.bloom.idx.mem.tables;
 
 import java.nio.LongBuffer;
 import java.util.NoSuchElementException;
@@ -90,7 +90,7 @@ public class LongBufferBitMap {
      */
     public boolean isSet(int idx) {
         if (idx < 0) {
-            throw new IllegalArgumentException(String.format("idx (%s) may not be less than zero (0)", idx));
+            throw new IndexOutOfBoundsException(String.format("idx (%s) may not be less than zero (0)", idx));
         }
         try {
             return (buffer.get(BitMap.getLongIndex(idx)) & BitMap.getLongBit(idx)) > 0;

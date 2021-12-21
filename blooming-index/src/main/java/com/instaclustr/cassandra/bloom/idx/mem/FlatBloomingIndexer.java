@@ -16,6 +16,9 @@
  */
 package com.instaclustr.cassandra.bloom.idx.mem;
 
+import java.io.IOException;
+import java.nio.ByteBuffer;
+
 import org.apache.cassandra.db.Clustering;
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.db.DeletionTime;
@@ -92,7 +95,7 @@ public class FlatBloomingIndexer implements Indexer {
 
     @Override
     public void insertRow(Row row) {
-        logger.trace("insertRow {} {}", row );
+        logger.trace("insertRow {} ", row );
         /*
          * single updates to the key only produce insert statements -- no deletes we
          * have to verify if there is already a record and read the existing bloom
@@ -104,13 +107,21 @@ public class FlatBloomingIndexer implements Indexer {
         }
 
         Cell<?> cell = row.getCell(indexedColumn);
-        if (cell == null || !cell.isLive(nowInSec)) {
+        if (cell == null || !cell.isLive(nowInSec) || cell.buffer() == null) {
             return;
         }
-        Clustering<?> clustering = row.clustering();
-        LivenessInfo info = LivenessInfo.withExpirationTime(cell.timestamp(), cell.ttl(), cell.localDeletionTime());
 
-        serde.insert(nowInSec, key, clustering, info, ctx, cell.buffer());
+        try {
+            serde.insert(nowInSec, key, row, cell.timestamp(), ctx, cell.buffer());
+        } catch (IOException e) {
+            logger.error( "Error inserting row", e );
+            throw new RuntimeException( e );
+        }
+    }
+
+    private ByteBuffer getIndexData( Row row ) {
+        Cell<?> cell = row.getCell(indexedColumn);
+        return cell == null? null:cell.buffer();
     }
 
     @Override
@@ -122,8 +133,21 @@ public class FlatBloomingIndexer implements Indexer {
             }
             return;
         }
-        removeRow(oldRowData);
-        insertRow(newRowData);
+        ByteBuffer oldBuffer = getIndexData( oldRowData );
+        ByteBuffer newBuffer = getIndexData( newRowData );
+
+        if (oldBuffer !=null  && newBuffer != null) {
+            if ( oldBuffer.compareTo( newBuffer ) == 0 || serde.update( key, newRowData, nowInSec ) )
+            {
+                return;
+            }
+        }
+        if (oldBuffer != null) {
+            removeRow(oldRowData);
+        }
+        if (newBuffer != null) {
+            insertRow(newRowData);
+        }
     }
 
     @Override
@@ -134,12 +158,12 @@ public class FlatBloomingIndexer implements Indexer {
             return;
 
         Cell<?> cell = row.getCell(indexedColumn);
-        if (cell == null || !cell.isLive(nowInSec)) {
+        if (cell == null || !cell.isLive(nowInSec) || cell.buffer() == null) {
             return;
         }
-        Clustering<?> clustering = row.clustering();
+
         DeletionTime deletedAt = new DeletionTime(cell.timestamp(), nowInSec);
-        serde.delete(key, clustering, deletedAt, ctx);
+        serde.delete(key, row, deletedAt, ctx);
 
     }
 

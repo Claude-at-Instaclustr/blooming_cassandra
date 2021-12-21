@@ -19,7 +19,6 @@ import org.junit.BeforeClass;
 import org.junit.Test;
 
 import com.google.common.io.Files;
-import com.instaclustr.cassandra.bloom.idx.mem.LongBufferBitMap;
 
 public class BloomTableTest {
 
