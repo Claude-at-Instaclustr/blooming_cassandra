@@ -20,11 +20,8 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.List;
-import java.util.Stack;
 import java.util.function.Consumer;
 import java.util.function.IntConsumer;
 
@@ -35,13 +32,10 @@ import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.db.DeletionTime;
 import org.apache.cassandra.db.Keyspace;
-import org.apache.cassandra.db.LivenessInfo;
 import org.apache.cassandra.db.ReadExecutionController;
 import org.apache.cassandra.db.SinglePartitionReadCommand;
 import org.apache.cassandra.db.WriteContext;
 import org.apache.cassandra.db.compaction.CompactionManager;
-import org.apache.cassandra.db.filter.ColumnFilter;
-import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.db.marshal.BytesType;
 import org.apache.cassandra.db.marshal.Int32Type;
 import org.apache.cassandra.db.partitions.PartitionUpdate;
@@ -61,10 +55,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.instaclustr.cassandra.bloom.idx.mem.tables.BaseTable;
-import com.instaclustr.cassandra.bloom.idx.mem.tables.BaseTable.Func;
 import com.instaclustr.cassandra.bloom.idx.mem.tables.BaseTable.OutputTimeoutException;
 import com.instaclustr.cassandra.bloom.idx.mem.tables.BufferTable;
-import com.instaclustr.cassandra.bloom.idx.std.IndexKey;
 
 /**
  * Handles all IO to the index table.
@@ -183,39 +175,6 @@ public class FlatBloomingIndexSerde {
     }
 
     /**
-     * Gets the Decorated key for the index table.
-     * @param value the ByteBuffer that contains the undecorated key.
-     * @return the Decorated key for the index table.
-     */
-    private DecoratedKey getIndexKeyFor(ByteBuffer value) {
-        return indexCfs.decorateKey(value);
-    }
-
-    /**
-     * Constructs the clustering for an entry in the index table based on values from the base data.
-     * The clustering columns in the index table encode the values required to retrieve the correct data
-     * from the base table and varies depending on the kind of the indexed column.  Used whenever a row
-     * in the index table is written or deleted.
-     * @param rowKey the key from the row in the base table being indexed.
-     * @param clustering the clustering from the row in the base table being indexed.
-     * @return a clustering to be inserted into the index table.
-     */
-    private <T> DecoratedKey buildIndexKey(DecoratedKey rowKey, Clustering<T> clustering) {
-        CBuilder builder = CBuilder.create(getIndexComparator());
-
-        builder.add(rowKey.getKey());
-        List<AbstractType<?>> types = new ArrayList<>(clustering.size() + 1);
-        types.add(BytesType.instance);
-        for (int i = 0; i < clustering.size(); i++) {
-            builder.add(clustering.get(i), clustering.accessor());
-            types.add(BytesType.instance);
-        }
-
-        ByteBuffer result = Clustering.serializer.serialize(builder.build(), 0x0a, types);
-        return getIndexKeyFor(result);
-    }
-
-    /**
      * Constructs the clustering for an entry in the index table based on values from the base data.
      * The clustering columns in the index table encode the values required to retrieve the correct data
      * from the base table and varies depending on the kind of the indexed column.  Used whenever a row
@@ -266,19 +225,19 @@ public class FlatBloomingIndexSerde {
 
     }
 
-    public void retryOnTimeout( Func fn ) throws Exception {
-        while (true) {
-            try {
-                fn.call();
-                return;
-            } catch (OutputTimeoutException e) {
-                logger.debug( "Timeout  executing {}, trying again", fn);
-            } catch (Exception e) {
-                logger.warn( "Error {} attempting {}", e, fn);
-                throw e;
-            }
-        }
-    }
+    //    public void retryOnTimeout( Func fn ) throws Exception {
+    //        while (true) {
+    //            try {
+    //                fn.call();
+    //                return;
+    //            } catch (OutputTimeoutException e) {
+    //                logger.debug( "Timeout  executing {}, trying again", fn);
+    //            } catch (Exception e) {
+    //                logger.warn( "Error {} attempting {}", e, fn);
+    //                throw e;
+    //            }
+    //        }
+    //    }
 
     /**
      * Inserts a new entry into the index.
@@ -295,9 +254,10 @@ public class FlatBloomingIndexSerde {
         int idx = read(nowInSec, rowKey, row.clustering());
 
         if (idx < 0) {
-            flatBloofi.exec( () -> retryOnTimeout( () -> doInsert(idx, rowKey, bloomFilter, row.clustering(), timestamp, ctx) ) );
+            flatBloofi.exec(() -> keyTable
+                    .retryOnTimeout(() -> doInsert(idx, rowKey, bloomFilter, row.clustering(), timestamp, ctx)));
         } else {
-            flatBloofi.exec( ()-> retryOnTimeout( () -> flatBloofi.update(idx, bloomFilter) ));
+            flatBloofi.exec(() -> keyTable.retryOnTimeout(() -> flatBloofi.update(idx, bloomFilter)));
         }
 
     }
@@ -316,8 +276,8 @@ public class FlatBloomingIndexSerde {
         int idx = read(deletedAt.localDeletionTime(), rowKey, row.clustering());
         if (idx != BufferTable.UNSET) {
 
-            flatBloofi.exec( () -> retryOnTimeout( () -> flatBloofi.delete(idx) ));
-            keyTable.exec( ()-> retryOnTimeout( () -> keyTable.delete(idx) ));
+            flatBloofi.exec(() -> keyTable.retryOnTimeout(() -> flatBloofi.delete(idx)));
+            keyTable.exec(() -> keyTable.retryOnTimeout(() -> keyTable.delete(idx)));
 
         }
 
@@ -393,6 +353,8 @@ public class FlatBloomingIndexSerde {
         indexCfs.forceBlockingFlush();
         indexCfs.readOrdering.awaitNewBarrier();
         indexCfs.invalidate();
+        flatBloofi.drop();
+        keyTable.drop();
     }
 
     // /**
@@ -424,14 +386,6 @@ public class FlatBloomingIndexSerde {
      * @return the UnfilteredRowIterator containing all matching entries.
      */
     private int read(int nowInSec, DecoratedKey rowKey, Clustering<?> clustering) {
-        // TableMetadata indexMetadata = indexCfs.metadata();
-        // DecoratedKey valueKey = buildIndexKey(rowKey, clustering);
-        /*
-         * return SinglePartitionReadCommand.create(indexMetadata, command.nowInSec(),
-         * indexKey, ColumnFilter.all(indexMetadata), filter)
-         * .queryMemtableAndDisk(indexCfs, executionController.indexReadController());
-         *
-         */
         SinglePartitionReadCommand readCommand = SinglePartitionReadCommand.create(indexCfs.metadata(), nowInSec,
                 convertToIndexKey(rowKey), clustering);
         try (ReadExecutionController readExecutionController = readCommand.executionController();

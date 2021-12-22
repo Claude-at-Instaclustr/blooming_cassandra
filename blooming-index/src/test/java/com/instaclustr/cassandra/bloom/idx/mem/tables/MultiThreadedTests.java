@@ -61,7 +61,7 @@ public class MultiThreadedTests {
     @Test
     public void getRangeLockTest() throws IOException, InterruptedException {
         List<Integer> lst = new ArrayList<Integer>();
-        try (BaseTable table = new BaseTable(file, 5)) {
+        try (BaseTable table = new BaseTable(file, 5,BaseTable.READ_WRITE)) {
             table.getLockedBlocks(lst::add);
             assertEquals(0, lst.size());
             lst.clear();
@@ -109,7 +109,7 @@ public class MultiThreadedTests {
     @Test
     public void getRangeLockOverlappingTest() throws IOException, InterruptedException {
         List<Integer> lst = new ArrayList<Integer>();
-        try (BaseTable table = new BaseTable(file, 5)) {
+        try (BaseTable table = new BaseTable(file, 5,BaseTable.READ_WRITE)) {
             table.getLockedBlocks(lst::add);
             assertEquals(0, lst.size());
             lst.clear();
@@ -157,7 +157,7 @@ public class MultiThreadedTests {
     @Test
     public void getRangeLockAdjacentTest() throws IOException, InterruptedException {
         List<Integer> lst = new ArrayList<Integer>();
-        try (BaseTable table = new BaseTable(file, 5)) {
+        try (BaseTable table = new BaseTable(file, 5,BaseTable.READ_WRITE)) {
             table.getLockedBlocks(lst::add);
             assertEquals(0, lst.size());
             lst.clear();
@@ -223,7 +223,7 @@ public class MultiThreadedTests {
 
         }
 
-        try (BaseTable table = new BaseTable(file, 5)) {
+        try (BaseTable table = new BaseTable(file, 5,BaseTable.READ_WRITE)) {
 
             class RunnableLockHolder implements Callable<Void> {
                 LockHolder lockHolder;

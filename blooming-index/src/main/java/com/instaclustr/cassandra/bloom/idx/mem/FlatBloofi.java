@@ -18,17 +18,26 @@ package com.instaclustr.cassandra.bloom.idx.mem;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.PrintStream;
 import java.nio.ByteBuffer;
 import java.nio.LongBuffer;
 import java.util.concurrent.Future;
 import java.util.function.IntConsumer;
 
+import org.apache.commons.cli.CommandLine;
+import org.apache.commons.cli.CommandLineParser;
+import org.apache.commons.cli.DefaultParser;
+import org.apache.commons.cli.HelpFormatter;
+import org.apache.commons.cli.Option;
+import org.apache.commons.cli.Options;
 import org.apache.commons.collections4.bloomfilter.BitMap;
+import org.apache.commons.collections4.bloomfilter.BitMapProducer;
+import org.apache.commons.collections4.bloomfilter.IndexProducer;
+import org.apache.commons.collections4.bloomfilter.Shape;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.instaclustr.cassandra.bloom.idx.mem.tables.BloomTable;
-import com.instaclustr.cassandra.bloom.idx.mem.tables.BufferTable;
 import com.instaclustr.cassandra.bloom.idx.mem.tables.BaseTable.Func;
 import com.instaclustr.cassandra.bloom.idx.mem.tables.BaseTable.OutputTimeoutException;
 import com.instaclustr.cassandra.bloom.idx.mem.tables.BaseTable;
@@ -51,20 +60,114 @@ public final class FlatBloofi implements AutoCloseable {
     private final BloomTable buffer;
     private final int numberOfBits;
 
-    public FlatBloofi(File dir, int numberOfBits) throws IOException {
-        this.numberOfBits = numberOfBits;
-        buffer = new BloomTable(numberOfBits, new File(dir, "BloomTable"));
+    public static Options getOptions() {
+        Options options = new Options();
+        options.addOption("h", "help", false, "This help");
+        Option option = new Option("n", "bits", true, "The number of bits in the Bloom filters");
+        option.setRequired(true);
+        options.addOption(option);
+        option = new Option("d", "directory", true, "The directory with FlatBloofi files to process.");
+        option.setRequired(true);
+        options.addOption(option);
+        options.addOption("o", "output", true, "Output file.  If not specified results will not be preserved");
+        options.addOption("i", "index", true, "A specific index to display/dump.  May be specified more than once");
+        return options;
+    }
+
+    public static void main(String[] args) throws IOException {
+        HelpFormatter formatter = new HelpFormatter();
+        CommandLineParser parser = new DefaultParser();
+        CommandLine cmd = null;
         try {
-            busy = new BitTable(new File(dir, "BusyTable"));
+            cmd = parser.parse(getOptions(), args);
+        } catch (Exception e) {
+            formatter.printHelp("FlatBloofi", "", getOptions(), e.getMessage());
+            System.exit(1);
+        }
+
+        if (cmd.hasOption("h")) {
+            formatter.printHelp("FlatBloofi", "", getOptions(), "");
+            System.exit(0);
+        }
+
+        File in = new File(cmd.getOptionValue("d"));
+        if (!in.exists()) {
+            formatter.printHelp("FlatBloofi", String.format("%s does not exist", in.getAbsoluteFile()), getOptions(),
+                    "");
+            System.exit(1);
+        }
+        int numberOfBits = 0;
+        try {
+            numberOfBits = Integer.parseInt(cmd.getOptionValue("n"));
+        } catch (NumberFormatException e) {
+            formatter.printHelp("FlatBloofi",
+                    String.format("%s can not be parsed as an integer", cmd.getOptionValue("b")), getOptions(),
+                    e.getMessage());
+            System.exit(1);
+        }
+
+        PrintStream out = System.out;
+        if (cmd.hasOption("o")) {
+            File f = new File(cmd.getOptionValue("o"));
+            if (!f.getParentFile().exists()) {
+                formatter.printHelp("FlatBloofi", String.format("Directory %s must exist", cmd.getOptionValue("o")),
+                        getOptions(), "");
+                System.exit(1);
+            }
+            out = new PrintStream(f);
+        }
+
+        out.println("'index','active','filter'");
+        try (FlatBloofi flatBloofi = new FlatBloofi(in, numberOfBits, BaseTable.READ_ONLY)) {
+
+            if (cmd.hasOption("i")) {
+                for (String idxStr : cmd.getOptionValues("i")) {
+                    try {
+                        int idx = Integer.parseInt(idxStr);
+                        printEntry(flatBloofi.getEntry(idx), numberOfBits, out);
+                    } catch (NumberFormatException e) {
+                        System.err.format("%s can not be parsed as a number%n", idxStr);
+                    }
+                }
+            } else {
+                for (int idx = 0; idx < flatBloofi.getMaxIndex(); idx++) {
+                    printEntry(flatBloofi.getEntry(idx), numberOfBits, out);
+                }
+            }
+        }
+    }
+
+    private static void printEntry(Entry entry, int numberOfBits, PrintStream out) {
+        BitMapProducer producer = BitMapProducer.fromIndexProducer(entry.getFilter(), numberOfBits);
+
+        out.format("%s,%s,'0x", entry.getIndex(), entry.isDeleted());
+        producer.forEachBitMap((w) -> {
+            out.format("%016x", w);
+            return true;
+        });
+        out.println("'");
+
+    }
+
+    public FlatBloofi(File dir, int numberOfBits) throws IOException {
+        this(dir, numberOfBits, BaseTable.READ_WRITE);
+    }
+
+    public FlatBloofi(File dir, int numberOfBits, boolean readOnly) throws IOException {
+        this.numberOfBits = numberOfBits;
+        buffer = new BloomTable(numberOfBits, new File(dir, "BloomTable"), readOnly);
+        try {
+            busy = new BitTable(new File(dir, "BusyTable"), readOnly);
         } catch (IOException e) {
             BaseTable.closeQuietly(buffer);
             throw e;
         }
     }
 
-    public Future<?> exec( Func fn ) {
-        return busy.exec( fn );
+    public Future<?> exec(Func fn) {
+        return busy.exec(fn);
     }
+
     @Override
     public void close() throws IOException {
         try {
@@ -82,38 +185,37 @@ public final class FlatBloofi implements AutoCloseable {
      * @return the bloom filter index
      * @throws IOException
      */
-    public int add(ByteBuffer bloomFilter) throws IOException  {
+    public int add(ByteBuffer bloomFilter) throws IOException {
 
-            int idx = -1;
-            while (idx<0) {
-                try {
-                    idx = busy.newIndex();
-                } catch (OutputTimeoutException e) {
-                    logger.debug( "Timeout trying to get new idx, trying again");
-                } catch (IOException e) {
-                    logger.error( "Error {} attempting to get new idx", e.getMessage());
-                    throw e;
-                }
+        int idx = -1;
+        while (idx < 0) {
+            try {
+                idx = busy.newIndex();
+            } catch (OutputTimeoutException e) {
+                logger.debug("Timeout trying to get new idx, trying again");
+            } catch (IOException e) {
+                logger.error("Error {} attempting to get new idx", e.getMessage());
+                throw e;
             }
-            while (true) {
-                try {
-                    buffer.setBloomAt(idx, bloomFilter.asLongBuffer());
-                    return idx;
-                } catch (OutputTimeoutException e) {
-                    logger.debug( "Timeout writing Bloom filter {}, trying again", idx);
-                } catch (IOException e) {
-                    final int idxToClear = idx;
-                    busy.requeue( () -> busy.clear(idxToClear) );
-                    logger.warn( "Error {} attempting to write Bloom filter {}", e, idx);
-                    throw e;
-                }
+        }
+        while (true) {
+            try {
+                buffer.setBloomAt(idx, bloomFilter.asLongBuffer());
+                return idx;
+            } catch (OutputTimeoutException e) {
+                logger.debug("Timeout writing Bloom filter {}, trying again", idx);
+            } catch (IOException e) {
+                final int idxToClear = idx;
+                busy.requeue(() -> busy.clear(idxToClear));
+                logger.warn("Error {} attempting to write Bloom filter {}", e, idx);
+                throw e;
             }
+        }
 
     }
 
-
     public void update(int idx, ByteBuffer bloomFilter) throws IOException {
-       buffer.setBloomAt(idx, bloomFilter.asLongBuffer());
+        buffer.setBloomAt(idx, bloomFilter.asLongBuffer());
     }
 
     private LongBuffer adjustBuffer(ByteBuffer bloomFilter) {
@@ -132,7 +234,6 @@ public final class FlatBloofi implements AutoCloseable {
     }
 
     public void search(IntConsumer result, ByteBuffer bloomFilter) throws IOException {
-
         buffer.search(result, adjustBuffer(bloomFilter), busy);
     }
 
@@ -144,4 +245,44 @@ public final class FlatBloofi implements AutoCloseable {
         return busy.cardinality();
     }
 
+    public int getMaxIndex() throws IOException {
+        return busy.getMaxIndex();
+    }
+
+    public Entry getEntry(int idx) {
+        return new Entry(idx);
+    }
+
+    public void drop() {
+        buffer.drop();
+        busy.drop();
+    }
+
+    public class Entry {
+        private int idx;
+
+        private Entry(int idx) {
+            this.idx = idx;
+        }
+
+        public int getIndex() {
+            return idx;
+        }
+
+        public boolean isDeleted() {
+            try {
+                return busy.retryOnTimeout(() -> {
+                    return busy.isSet(idx);
+                });
+            } catch (Exception e) {
+                logger.error("Error getting deleted status for " + idx, e);
+                return true;
+            }
+        }
+
+        public IndexProducer getFilter() {
+            return buffer.getBloomAt(idx);
+        }
+
+    }
 }

@@ -57,6 +57,8 @@ import org.slf4j.LoggerFactory;
  *
  */
 public class BaseTable implements AutoCloseable {
+    public final static boolean READ_ONLY = true;
+    public final static boolean READ_WRITE = false;
     private final File file;
     private final RandomAccessFile raFile;
     private final int blockSize;
@@ -64,6 +66,7 @@ public class BaseTable implements AutoCloseable {
     private final Map<Integer, ReentrantLock> blockLocks = new ConcurrentHashMap<Integer, ReentrantLock>();
     protected final ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor();
     private final List<Func> extendNotify = new CopyOnWriteArrayList<Func>();
+    private final boolean readOnly;
 
     protected final Runnable blockLogsCleanup = new Runnable() {
         @Override
@@ -88,16 +91,17 @@ public class BaseTable implements AutoCloseable {
      * @param blockSize the size of the block in the table.
      * @throws IOException on IO error.
      */
-    public BaseTable(File file, int blockSize) throws IOException {
+    protected BaseTable(File file, int blockSize, boolean readOnly) throws IOException {
+        this.readOnly = readOnly;
         this.file = file;
         this.file.createNewFile();
-        this.raFile = new RandomAccessFile(file, "rw");
+        this.raFile = new RandomAccessFile(file, readOnly ? "r" : "rw");
         this.blockSize = blockSize;
         this.extensionBlockSize = blockSize;
         this.executor.scheduleWithFixedDelay(blockLogsCleanup, 1000 * 5 * 50, 5, TimeUnit.MINUTES);
         FileChannel fileChannel = raFile.getChannel();
         long size = fileChannel.size();
-        this.buffer = fileChannel.map(MapMode.READ_WRITE, 0, size);
+        this.buffer = fileChannel.map(readOnly ? MapMode.READ_ONLY : MapMode.READ_WRITE, 0, size);
     }
 
     public Future<?> exec(Func fn) {
@@ -162,6 +166,23 @@ public class BaseTable implements AutoCloseable {
         }
     }
 
+    public void retryOnTimeout(Func fn) throws Exception {
+        retryOnTimeout(fn.asCallable());
+    }
+
+    public <T> T retryOnTimeout(Callable<T> fn) throws Exception {
+        while (true) {
+            try {
+                return fn.call();
+            } catch (OutputTimeoutException e) {
+                getLogger().debug("Timeout  executing {}, trying again", fn);
+            } catch (Exception e) {
+                getLogger().warn("Error {} attempting {}", e, fn);
+                throw e;
+            }
+        }
+    }
+
     /**
      * Returns the number of active block locks on the table.
      * <p>
@@ -204,6 +225,11 @@ public class BaseTable implements AutoCloseable {
      */
     protected long getFileSize() throws IOException {
         return raFile.length();
+    }
+
+    public void drop() {
+        closeQuietly();
+        this.file.delete();
     }
 
     @Override
@@ -434,7 +460,7 @@ public class BaseTable implements AutoCloseable {
         // Get direct long buffer access using channel.map() operation
         int result = (int) fileChannel.size();
         long size = fileChannel.size() + (blocks * extensionBlockSize);
-        buffer = fileChannel.map(MapMode.READ_WRITE, 0, size);
+        buffer = fileChannel.map(readOnly ? MapMode.READ_ONLY : MapMode.READ_WRITE, 0, size);
         extendNotify.forEach(f -> execQuietly(f));
         return result;
     }
@@ -455,7 +481,7 @@ public class BaseTable implements AutoCloseable {
 
         int result = (int) fileChannel.size();
         long size = fileChannel.size() + bytes;
-        buffer = fileChannel.map(MapMode.READ_WRITE, 0, size);
+        buffer = fileChannel.map(readOnly ? MapMode.READ_ONLY : MapMode.READ_WRITE, 0, size);
         extendNotify.forEach(f -> execQuietly(f));
         return result;
     }

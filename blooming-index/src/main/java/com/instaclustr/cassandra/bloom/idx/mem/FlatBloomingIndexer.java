@@ -17,12 +17,8 @@
 package com.instaclustr.cassandra.bloom.idx.mem;
 
 import java.io.IOException;
-import java.nio.ByteBuffer;
-
-import org.apache.cassandra.db.Clustering;
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.db.DeletionTime;
-import org.apache.cassandra.db.LivenessInfo;
 import org.apache.cassandra.db.RangeTombstone;
 import org.apache.cassandra.db.WriteContext;
 import org.apache.cassandra.db.rows.Cell;
@@ -95,7 +91,7 @@ public class FlatBloomingIndexer implements Indexer {
 
     @Override
     public void insertRow(Row row) {
-        logger.trace("insertRow {} ", row );
+        logger.trace("insertRow {} ", row);
         /*
          * single updates to the key only produce insert statements -- no deletes we
          * have to verify if there is already a record and read the existing bloom
@@ -114,45 +110,39 @@ public class FlatBloomingIndexer implements Indexer {
         try {
             serde.insert(nowInSec, key, row, cell.timestamp(), ctx, cell.buffer());
         } catch (IOException e) {
-            logger.error( "Error inserting row", e );
-            throw new RuntimeException( e );
+            logger.error("Error inserting row", e);
+            throw new RuntimeException(e);
         }
-    }
-
-    private ByteBuffer getIndexData( Row row ) {
-        Cell<?> cell = row.getCell(indexedColumn);
-        return cell == null? null:cell.buffer();
     }
 
     @Override
     public void updateRow(Row oldRowData, Row newRowData) {
-        logger.trace("updateRow {} {}", oldRowData, newRowData );
+        logger.trace("updateRow {} {}", oldRowData, newRowData);
         if (newRowData.isStatic()) {
             if (!oldRowData.isStatic()) {
                 removeRow(oldRowData);
             }
             return;
         }
-        ByteBuffer oldBuffer = getIndexData( oldRowData );
-        ByteBuffer newBuffer = getIndexData( newRowData );
+        Cell<?> oldCell = oldRowData.getCell(indexedColumn);
+        Cell<?> newCell = newRowData.getCell(indexedColumn);
 
-        if (oldBuffer !=null  && newBuffer != null) {
-            if ( oldBuffer.compareTo( newBuffer ) == 0 || serde.update( key, newRowData, nowInSec ) )
-            {
+        if (oldCell != null && newCell != null) {
+            if (serde.update(key, newRowData, nowInSec)) {
                 return;
             }
         }
-        if (oldBuffer != null) {
+        if (oldCell != null) {
             removeRow(oldRowData);
         }
-        if (newBuffer != null) {
+        if (newCell != null) {
             insertRow(newRowData);
         }
     }
 
     @Override
     public void removeRow(Row row) {
-        logger.trace("removeRow {} {}", row );
+        logger.trace("removeRow {} {}", row);
 
         if (row.isStatic())
             return;

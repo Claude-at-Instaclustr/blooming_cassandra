@@ -36,12 +36,20 @@ public class BitTable extends BaseTable implements AutoCloseable {
     private volatile int lowestDeletedBlock = 0;
 
     public BitTable(File busyFile) throws IOException {
-        super(busyFile, Long.BYTES);
-        super.registerExtendNotification(() -> {
+        this(busyFile, BaseTable.READ_WRITE);
+    }
+
+    public BitTable(File busyFile, boolean readOnly) throws IOException {
+        super(busyFile, Long.BYTES, readOnly);
+        if (readOnly) {
+            writeBuffer = getLongBuffer();
+        } else {
+            super.registerExtendNotification(() -> {
+                writeBuffer = getWritableLongBuffer();
+            });
             writeBuffer = getWritableLongBuffer();
-        });
-        writeBuffer = getWritableLongBuffer();
-        executor.scheduleWithFixedDelay(() -> scanForLowest(), 0, 5, TimeUnit.MINUTES);
+            executor.scheduleWithFixedDelay(() -> scanForLowest(), 0, 5, TimeUnit.MINUTES);
+        }
     }
 
     private void scanForLowest() {
@@ -53,6 +61,10 @@ public class BitTable extends BaseTable implements AutoCloseable {
                 return;
             }
         }
+    }
+
+    public int getMaxIndex() throws IOException {
+        return (int) getFileSize() * Byte.SIZE;
     }
 
     @Override
@@ -171,7 +183,7 @@ public class BitTable extends BaseTable implements AutoCloseable {
                     scanner.next();
                 }
             }
-        }catch (IOException e) {
+        } catch (IOException e) {
             logger.warn("newIndex failure: {}, creating new entry", e.getMessage());
         }
         // there is no old index so create a new one.

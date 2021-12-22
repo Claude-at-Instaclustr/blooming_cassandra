@@ -18,10 +18,17 @@ package com.instaclustr.cassandra.bloom.idx.mem.tables;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.PrintStream;
 import java.nio.ByteBuffer;
 import java.util.Stack;
-import java.util.concurrent.Future;
+import java.util.function.IntConsumer;
 
+import org.apache.commons.cli.CommandLine;
+import org.apache.commons.cli.CommandLineParser;
+import org.apache.commons.cli.DefaultParser;
+import org.apache.commons.cli.HelpFormatter;
+import org.apache.commons.cli.Option;
+import org.apache.commons.cli.Options;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -37,55 +44,124 @@ public class BufferTable extends BaseTable {
     final BufferTableIdx keyTableIdx;
 
     @Override
+    public void drop() {
+        idxTable.drop();
+        keyTableIdx.drop();
+        super.drop();
+    }
+
+    @Override
     public void close() throws IOException {
         closeQuietly(idxTable);
         closeQuietly(keyTableIdx);
         super.close();
     }
 
+    public static Options getOptions() {
+        Options options = new Options();
+        options.addOption("h", "help", false, "This help");
+        Option option = new Option("b", "block-size", true, "The size in bytes of the table blocks");
+        option.setRequired(true);
+        options.addOption(option);
+        option = new Option("i", "input", true, "The Buffer Table file to process.");
+        option.setRequired(true);
+        options.addOption(option);
+        options.addOption("o", "output", true, "Output file.  If not specified results will not be preserved");
+        return options;
+    }
+
     public static void main(String[] args) throws IOException {
-        File f = new File(args[0]);
-        if (!f.exists()) {
-            System.err.println(String.format("%s does not exist", f.getAbsoluteFile()));
+        HelpFormatter formatter = new HelpFormatter();
+        CommandLineParser parser = new DefaultParser();
+        CommandLine cmd = null;
+        try {
+            cmd = parser.parse(getOptions(), args);
+        } catch (Exception e) {
+            formatter.printHelp("BufferTable", "", getOptions(), e.getMessage());
+            System.exit(1);
         }
-        int blockSize = Integer.parseInt(args[1]);
 
-        System.out.println("'index','map','offset','hex','char'");
+        if (cmd.hasOption("h")) {
+            formatter.printHelp("BufferTable", "", getOptions(), "");
+            System.exit(0);
+        }
 
-        try (BufferTable bufferTable = new BufferTable(f, blockSize)) {
+        File in = new File(cmd.getOptionValue("i"));
+        if (!in.exists()) {
+            formatter.printHelp("BufferTable", String.format("%s does not exist", in.getAbsoluteFile()), getOptions(),
+                    "");
+            System.exit(1);
+        }
+        int blockSize = 0;
+        try {
+            blockSize = Integer.parseInt(cmd.getOptionValue("b"));
+        } catch (NumberFormatException e) {
+            formatter.printHelp("BufferTable",
+                    String.format("%s can not be parsed as an integer", cmd.getOptionValue("b")), getOptions(),
+                    e.getMessage());
+            System.exit(1);
+        }
+
+        PrintStream out = System.out;
+        if (cmd.hasOption("o")) {
+            File f = new File(cmd.getOptionValue("o"));
+            if (!f.getParentFile().exists()) {
+                formatter.printHelp("BufferTable", String.format("Directory %s must exist", cmd.getOptionValue("o")),
+                        getOptions(), "");
+                System.exit(1);
+            }
+            out = new PrintStream(f);
+        }
+
+        out.println(
+                "'index','initialized','reference','idx_init','available','deleted','invalid','used','allocated','offset','hex','char'");
+
+        try (BufferTable bufferTable = new BufferTable(in, blockSize, BaseTable.READ_ONLY)) {
 
             int blocks = (int) bufferTable.idxTable.getFileSize() / bufferTable.idxTable.getBlockSize();
             for (int block = 0; block < blocks; block++) {
                 MapEntry mapEntry = bufferTable.idxTable.get(block);
                 if (mapEntry.isInitialized()) {
                     IdxEntry idxEntry = bufferTable.keyTableIdx.get(mapEntry.getKeyIdx());
-                    ByteBuffer value = bufferTable.get(block);
 
-                    System.out.print(String.format("%s,%s,%s,", block, mapEntry.getKeyIdx(), idxEntry.getOffset()));
-                    if (value == null) {
-                        System.out.println(",");
-                    } else {
-                        System.out.print("'0x");
-                        for (int i = 0; i < idxEntry.getLen(); i++) {
-                            System.out.print(String.format("%2x", value.get(value.position() + i)));
-                        }
-                        System.out.print("','");
-                        for (int i = 0; i < idxEntry.getLen(); i++) {
-                            System.out.print(String.format("%s", (char) value.get(value.position() + i)));
-                        }
-                        System.out.println("'");
+                    out.print(String.format("%s,'true',%s,%s,%s,%s,%s,%s,%s,%s,", block, mapEntry.getKeyIdx(),
+                            idxEntry.isInitialized(), idxEntry.isAvailable(), idxEntry.isDeleted(),
+                            idxEntry.isInvalid(), idxEntry.getLen(), idxEntry.getAlloc(), idxEntry.getOffset()));
+                    ByteBuffer value = null;
+                    if (!idxEntry.isInvalid()) {
+                        value = bufferTable.get(block);
                     }
+
+                    if (value == null) {
+                        out.println(",");
+                    } else {
+                        out.print("'0x");
+                        for (int i = 0; i < idxEntry.getLen(); i++) {
+                            out.print(String.format("%2x", value.get(value.position() + i)));
+                        }
+                        out.print("','");
+                        for (int i = 0; i < idxEntry.getLen(); i++) {
+                            out.print(String.format("%s", (char) value.get(value.position() + i)));
+                        }
+                        out.println("'");
+                    }
+                } else {
+                    out.println(String.format("%s,'false',%s,,,,,,,,", block, mapEntry.getKeyIdx()));
                 }
             }
         }
     }
 
     public BufferTable(File file, int blockSize) throws IOException {
-        super(file, blockSize);
+        this(file, blockSize, BaseTable.READ_WRITE);
+    }
+
+    public BufferTable(File file, int blockSize, boolean readOnly) throws IOException {
+        super(file, blockSize, readOnly);
         File idxFile = new File(file.getParentFile(), file.getName() + "_idx");
-        idxTable = new IdxMap(idxFile);
+        idxTable = new IdxMap(idxFile, readOnly);
         File keyIdxFile = new File(file.getParentFile(), file.getName() + "_keyidx");
-        keyTableIdx = new BufferTableIdx(keyIdxFile);
+        keyTableIdx = new BufferTableIdx(keyIdxFile, readOnly);
     }
 
     public ByteBuffer get(int idx) throws IOException {
@@ -220,5 +296,9 @@ public class BufferTable extends BaseTable {
                 keyIdx.setDeleted(true);
             }
         }
+    }
+
+    public void search(IntConsumer consumer, IdxMap.SearchEntry target) {
+        idxTable.search(consumer, target);
     }
 }

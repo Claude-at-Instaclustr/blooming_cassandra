@@ -23,10 +23,15 @@ import java.nio.LongBuffer;
 import java.util.PrimitiveIterator;
 import java.util.concurrent.Future;
 import java.util.function.IntConsumer;
+import java.util.function.IntPredicate;
+
 import org.apache.commons.collections4.bloomfilter.BitMap;
+import org.apache.commons.collections4.bloomfilter.IndexProducer;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import com.instaclustr.cassandra.bloom.idx.mem.tables.BaseTable.Func;
-import com.instaclustr.cassandra.bloom.idx.mem.tables.BaseTable.OutputTimeoutException;
+import com.instaclustr.cassandra.bloom.idx.mem.tables.BaseTable.RangeLock;
 
 /**
  * This is the core of the Bloofi implementation.
@@ -36,6 +41,8 @@ import com.instaclustr.cassandra.bloom.idx.mem.tables.BaseTable.OutputTimeoutExc
  * shape of the filter being indexed.
  */
 public class BloomTable implements AutoCloseable {
+
+    private static final Logger logger = LoggerFactory.getLogger(BloomTable.class);
 
     /**
      * The number of bits in the Bloom filter.
@@ -51,24 +58,36 @@ public class BloomTable implements AutoCloseable {
      * @throws IOException
      */
     public BloomTable(int numberOfBits, File file) throws IOException {
-        this.bitTable = new BitTable(file);
+        this(numberOfBits, file, BaseTable.READ_WRITE);
+    }
+
+    /**
+     * The sizes for a singe bloom filter
+     * @param numberOfBits
+     * @param bufferFile
+     * @throws IOException
+     */
+    public BloomTable(int numberOfBits, File file, boolean readOnly) throws IOException {
+        this.bitTable = new BitTable(file, readOnly);
         this.numberOfBits = numberOfBits;
         this.bufferCalc = new BufferCalc();
         this.bitTable.setExtensionBlockSize(bufferCalc.lengthInBytes);
     }
 
-    public Future<?> exec( Func fn ) {
+    public Future<?> exec(Func fn) {
         return bitTable.exec(fn);
     }
-    public void requeue( Func fn ) {
-        bitTable.requeue( fn );;
+
+    public void requeue(Func fn) {
+        bitTable.requeue(fn);
+        ;
     }
 
     /**
      * Sets the bloom filter at the index position in the table.
      * @param idx the index of the Bloom filter.
      * @param bloomFilter the Bloom filter
-     * @throws IOException on Error
+     * @throws IOException
      */
     public void setBloomAt(int idx, LongBuffer bloomFilter) throws IOException {
         bitTable.ensureBlock(bufferCalc.getNumberOfBlocks(idx));
@@ -76,14 +95,49 @@ public class BloomTable implements AutoCloseable {
         LongBufferBitMap bloomBitMap = new LongBufferBitMap(bloomFilter);
         // for each enabled bit in the Bloom filter enable the idx bit in
         // the associated mappedBits.
-        for (int i = 0; i < numberOfBits; i++) {
-            int bufferIdx = bufferCalc.getBufferBitPosition(idx, i);
-            if (bloomBitMap.isSet(i)) {
-                bitTable.set(bufferIdx);
-            } else {
-                bitTable.clear(bufferIdx);
-            }
+        try {
+            bitTable.retryOnTimeout(() -> {
+                try (RangeLock lock = bitTable.getLock(bufferCalc.getBufferOffsetForIdx(idx),
+                        bufferCalc.getLengthInBytes(), 4)) {
+                    for (int i = 0; i < numberOfBits; i++) {
+                        int bufferIdx = bufferCalc.getBufferBitPosition(idx, i);
+                        if (bloomBitMap.isSet(i)) {
+                            bitTable.set(bufferIdx);
+                        } else {
+                            bitTable.clear(bufferIdx);
+                        }
+                    }
+                }
+            });
+        } catch (IOException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new IOException("Error while trying to set Bloom filter", e);
         }
+    }
+
+    public IndexProducer getBloomAt(int idx) {
+        return new IndexProducer() {
+
+            @Override
+            public boolean forEachIndex(IntPredicate predicate) {
+
+                for (int i = 0; i < numberOfBits; i++) {
+                    int bufferIdx = bufferCalc.getBufferBitPosition(idx, i);
+                    try {
+                        if (bitTable.retryOnTimeout(() -> bitTable.isSet(bufferIdx))) {
+                            if (!predicate.test(i)) {
+                                return false;
+                            }
+                        }
+                    } catch (Exception e) {
+                        logger.warn("Error when checking bit " + i, e);
+                    }
+                }
+                return true;
+            }
+        };
+
     }
 
     /**
@@ -121,6 +175,11 @@ public class BloomTable implements AutoCloseable {
     @Override
     public String toString() {
         return bitTable.toString();
+    }
+
+    public void drop() {
+        BaseTable.closeQuietly(this);
+        bitTable.drop();
     }
 
     @Override

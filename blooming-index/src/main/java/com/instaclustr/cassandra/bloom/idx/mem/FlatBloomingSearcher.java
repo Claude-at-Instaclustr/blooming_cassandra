@@ -19,13 +19,10 @@ package com.instaclustr.cassandra.bloom.idx.mem;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.charset.CharacterCodingException;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.SortedSet;
 import java.util.TreeSet;
 import java.util.function.Function;
 
-import org.apache.cassandra.db.Clustering;
 import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.db.ReadCommand;
@@ -34,19 +31,15 @@ import org.apache.cassandra.db.SinglePartitionReadCommand;
 import org.apache.cassandra.db.filter.ColumnFilter;
 import org.apache.cassandra.db.filter.DataLimits;
 import org.apache.cassandra.db.filter.RowFilter;
-import org.apache.cassandra.db.marshal.AbstractType;
-import org.apache.cassandra.db.marshal.BytesType;
 import org.apache.cassandra.db.partitions.UnfilteredPartitionIterator;
 import org.apache.cassandra.db.rows.UnfilteredRowIterator;
 import org.apache.cassandra.index.Index.Searcher;
-import org.apache.cassandra.net.MessagingService;
 import org.apache.cassandra.schema.ColumnMetadata;
 import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.google.common.collect.ImmutableList;
 import com.instaclustr.iterator.util.ExtendedIterator;
 import com.instaclustr.iterator.util.WrappedIterator;
 
@@ -118,24 +111,10 @@ public class FlatBloomingSearcher implements Searcher {
         };
     }
 
-    private List<AbstractType<?>> getKeysTypes() {
-        TableMetadata tableMetadata = baseCfs.metadata();
-        //tableMetadata.primaryKeyColumns();
-        ImmutableList<ColumnMetadata> lst = tableMetadata.clusteringColumns();
-
-        List<AbstractType<?>> types = new ArrayList<>(lst.size());
-        types.add( BytesType.instance );
-
-        for (int i = 0; i < lst.size(); i++) {
-            types.add( lst.get(i).type );
-        }
-        return types;
-    }
-
     @Override
     public UnfilteredPartitionIterator search(ReadExecutionController executionController) {
 
-//        List<AbstractType<?>> types = getKeysTypes();
+        //        List<AbstractType<?>> types = getKeysTypes();
         // Create a function to convert DecoratedKey from the index to a Row from the
         // base table.
         Function<DecoratedKey, UnfilteredRowIterator> key2RowIter = new Function<DecoratedKey, UnfilteredRowIterator>() {
@@ -146,8 +125,8 @@ public class FlatBloomingSearcher implements Searcher {
                 } catch (CharacterCodingException e) {
                     logger.debug("Reading row {}", hit);
                 }
-//               Clustering<?> clutering = Clustering.serializer.deserialize( hit.getKey(), 0x0a, types);
-//
+                //               Clustering<?> clutering = Clustering.serializer.deserialize( hit.getKey(), 0x0a, types);
+                //
                 ColumnFilter extendedFilter = getExtendedFilter(command.columnFilter());
                 SinglePartitionReadCommand dataCmd = SinglePartitionReadCommand.create(baseCfs.metadata(),
                         command.nowInSec(), extendedFilter, command.rowFilter(), DataLimits.NONE, hit,

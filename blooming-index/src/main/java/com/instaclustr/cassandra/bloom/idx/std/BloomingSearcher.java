@@ -215,7 +215,7 @@ public class BloomingSearcher implements Searcher {
                     }).forEach(rowIter -> {
                         // we use foreach here so that the row iterator will get closed.
                         WrappedIterator.create(rowIter).mapWith(row2Key).filterKeep(searchMergeFilter)
-                                .forEach(mapSet::add);
+                        .forEach(mapSet::add);
                     });
                     logger.debug("Completed Returning {} entries", mapSet.size());
                     return mapSet;

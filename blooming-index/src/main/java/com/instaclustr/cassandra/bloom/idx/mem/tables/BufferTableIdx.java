@@ -24,9 +24,6 @@ import java.util.function.IntPredicate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.instaclustr.cassandra.bloom.idx.mem.tables.BaseTable.OutputTimeoutException;
-import com.instaclustr.cassandra.bloom.idx.mem.tables.BaseTable.RangeLock;
-
 /**
  * Manages a file that contains the offset of the index into a key file.
  *
@@ -311,10 +308,10 @@ public class BufferTableIdx extends BaseTable implements AutoCloseable {
         if ((f.length() % BLOCK_SIZE) != 0) {
             long expected = f.length() - (f.length() % BLOCK_SIZE);
             System.err
-                    .println(String.format("File has incorrect block size (%s) should be (%s).", f.length(), expected));
+            .println(String.format("File has incorrect block size (%s) should be (%s).", f.length(), expected));
         }
         System.out.println("'index','offset','available','deleted','initialized','invalid','used','allocated'");
-        try (BufferTableIdx idx = new BufferTableIdx(f)) {
+        try (BufferTableIdx idx = new BufferTableIdx(f, BaseTable.READ_ONLY)) {
             int blocks = (int) idx.getFileSize() / idx.getBlockSize();
             for (int block = 0; block < blocks; block++) {
                 IdxEntry entry = idx.get(block);
@@ -331,7 +328,11 @@ public class BufferTableIdx extends BaseTable implements AutoCloseable {
      * @throws IOException on IO error.
      */
     public BufferTableIdx(File bufferFile) throws IOException {
-        super(bufferFile, BLOCK_SIZE);
+        this(bufferFile, BaseTable.READ_WRITE);
+    }
+
+    public BufferTableIdx(File bufferFile, boolean readOnly) throws IOException {
+        super(bufferFile, BLOCK_SIZE, readOnly);
         this.buffer = getBuffer();
         registerExtendNotification(() -> buffer = getBuffer());
         executor.submit(() -> buildDeletedSet());
@@ -364,104 +365,6 @@ public class BufferTableIdx extends BaseTable implements AutoCloseable {
         ensureBlock(block + 1);
         return new IdxEntry(block);
     }
-
-    // class Scanner implements Callable<Boolean>, Iterator<IdxEntry> {
-    //
-    // private ByteBuffer buffer;
-    // private final int length;
-    // private IdxEntry next;
-    // private int lastEntryBlock;
-    //
-    // Scanner(ByteBuffer buffer, int length) {
-    // this.buffer = buffer;
-    // this.length = length;
-    // this.next = null;
-    // this.lastEntryBlock = -1;
-    // }
-    //
-    // private boolean isMatch(IdxEntry entry) {
-    // if (logger.isDebugEnabled()) {
-    // logger.debug(String.format("isMatch checking %s: %2x,%d,%d,%d", entry.offset,
-    // buffer.get(entry.offset),
-    // buffer.get(entry.offset), buffer.getInt(entry.offset + OFFSET_BYTE),
-    // buffer.getInt(entry.offset + LEN_BYTE), buffer.getInt(entry.offset +
-    // ALLOC_BYTE)));
-    // }
-    // System.out.println(String.format("isMatch checking %s: %2x,%d,%d,%d",
-    // entry.offset, buffer.get(entry.offset),
-    // buffer.get(entry.offset), buffer.getInt(entry.offset + OFFSET_BYTE),
-    // buffer.getInt(entry.offset + LEN_BYTE), buffer.getInt(entry.offset +
-    // ALLOC_BYTE)));
-    // return entry.isAvailable() && entry.getAlloc() >= length;
-    // }
-    //
-    // @Override
-    // public boolean hasNext() {
-    // if (next != null) {
-    // return true;
-    // }
-    // try {
-    // IdxEntry entry = new IdxEntry(buffer, ++lastEntryBlock);
-    // while (entry.offset < getFileSize()) {
-    // if (entry.offset + BLOCK_SIZE > getFileSize()) {
-    // checkBlockAlignment(getFileSize(), BLOCK_SIZE);
-    // checkBlockAlignment(entry.offset, BLOCK_SIZE);
-    // throw new IllegalStateException(String.format("offset %s overlaps end of
-    // file", entry.offset));
-    // }
-    // if (entry.offset > buffer.limit()) {
-    // buffer = getBuffer();
-    // entry.buffer = buffer;
-    // }
-    // if (isMatch(entry)) {
-    // next = entry;
-    // lastEntryBlock = entry.getBlock();
-    // return true;
-    // }
-    // entry.offset += BLOCK_SIZE;
-    // }
-    // } catch (IOException e) {
-    // logger.error("Scanning error", e);
-    // return false;
-    // }
-    // return false;
-    // }
-    //
-    // public int getOffset() {
-    // if (hasNext()) {
-    // return next.offset;
-    // }
-    // throw new NoSuchElementException();
-    // }
-    //
-    // @Override
-    // public IdxEntry next() {
-    // if (hasNext()) {
-    // try {
-    // return next;
-    // } finally {
-    // next = null;
-    // }
-    //
-    // }
-    // throw new NoSuchElementException();
-    // }
-    //
-    // @Override
-    // public Boolean call() {
-    // if (hasNext() && isMatch(next)) {
-    // try {
-    // next.setDeleted(false);
-    // next.setInitialized(false);
-    // return true;
-    // } catch (IOException e) {
-    // throw new RuntimeException(e);
-    // }
-    // }
-    // return false;
-    // }
-    //
-    // }
 
     @Override
     public void close() throws IOException {

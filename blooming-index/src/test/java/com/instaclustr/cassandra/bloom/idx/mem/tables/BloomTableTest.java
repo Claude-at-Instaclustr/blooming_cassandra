@@ -137,27 +137,12 @@ public class BloomTableTest {
     @Test
     public void patternTest() throws IOException {
         int numberOfBits = 16;
-        ByteBuffer bb1 = ByteBuffer.wrap(new byte[] { 0x01, 0x01 });
-        ByteBuffer bb2 = ByteBuffer.wrap(new byte[] { 0x02, 0x02 });
-        ByteBuffer bb3 = ByteBuffer.wrap(new byte[] { 0x03, 0x03 });
-        ByteBuffer bb4 = ByteBuffer.wrap(new byte[] { 0x04, 0x04 });
-        ByteBuffer bb5 = ByteBuffer.wrap(new byte[] { 0x05, 0x05 });
-        ByteBuffer bb6 = ByteBuffer.wrap(new byte[] { 0x06, 0x06 });
-        ByteBuffer bb7 = ByteBuffer.wrap(new byte[] { 0x07, 0x07 });
-        ByteBuffer bb8 = ByteBuffer.wrap(new byte[] { 0x08, 0x08 });
-        ByteBuffer bb9 = ByteBuffer.wrap(new byte[] { 0x09, 0x09 });
-        ByteBuffer bbA = ByteBuffer.wrap(new byte[] { 0x0A, 0x0A });
-        ByteBuffer bbB = ByteBuffer.wrap(new byte[] { 0x0B, 0x0B });
-        ByteBuffer bbC = ByteBuffer.wrap(new byte[] { 0x0C, 0x0C });
-        ByteBuffer bbD = ByteBuffer.wrap(new byte[] { 0x0D, 0x0D });
-        ByteBuffer bbE = ByteBuffer.wrap(new byte[] { 0x0E, 0x0E });
-        ByteBuffer bbF = ByteBuffer.wrap(new byte[] { 0x0F, 0x0F });
-        try (BloomTable bloomTable = new BloomTable(numberOfBits, file)) {
+                try (BloomTable bloomTable = new BloomTable(numberOfBits, file)) {
             for (int i = 1; i < 0x100; i++) {
                 LongBuffer lb = LongBuffer.allocate(BitMap.numberOfBitMaps(16));
                 lb.put(i);
                 lb.flip();
-                bloomTable.setBloomAt(1, lb);
+                bloomTable.setBloomAt(i, lb);
                 ;
             }
 

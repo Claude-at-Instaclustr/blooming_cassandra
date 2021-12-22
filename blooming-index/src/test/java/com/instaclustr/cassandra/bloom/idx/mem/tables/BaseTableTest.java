@@ -53,7 +53,7 @@ public class BaseTableTest {
 
     @Test
     public void ensureBlockTest() throws IOException {
-        try (BaseTable table = new BaseTable(file, 5)) {
+        try (BaseTable table = new BaseTable(file, 5, BaseTable.READ_WRITE)) {
             assertEquals(0L, table.getFileSize());
             // ensure block 0 exists
             table.ensureBlock(1);
@@ -67,7 +67,7 @@ public class BaseTableTest {
 
     @Test
     public void execQuietlyTest() throws IOException {
-        try (BaseTable table = new BaseTable(file, 5)) {
+        try (BaseTable table = new BaseTable(file, 5, BaseTable.READ_WRITE)) {
             try {
                 table.execQuietly(() -> {
                     throw new Exception("execQuietlyTest This Exception is expected");
@@ -100,7 +100,7 @@ public class BaseTableTest {
 
     @Test
     public void extendBufferTest() throws IOException {
-        try (BaseTable table = new BaseTable(file, 5)) {
+        try (BaseTable table = new BaseTable(file, 5, BaseTable.READ_WRITE)) {
             assertEquals(0L, table.getFileSize());
             table.extendBuffer();
             assertEquals(5L, table.getFileSize());
@@ -113,7 +113,7 @@ public class BaseTableTest {
 
     @Test
     public void extendBufferAfteFactionalAddWorks() throws IOException {
-        try (BaseTable table = new BaseTable(file, 5)) {
+        try (BaseTable table = new BaseTable(file, 5, BaseTable.READ_WRITE)) {
 
             // fractional blocks do not increment the block count
             table.extendBytes(2);
@@ -130,7 +130,7 @@ public class BaseTableTest {
 
     @Test
     public void extendBytesTest() throws IOException {
-        try (BaseTable table = new BaseTable(file, 5)) {
+        try (BaseTable table = new BaseTable(file, 5, BaseTable.READ_WRITE)) {
             assertEquals(0L, table.getFileSize());
             table.extendBytes(4);
             assertEquals(4L, table.getFileSize());
@@ -143,7 +143,7 @@ public class BaseTableTest {
     @Test
     public void getLockTest() throws IOException {
 
-        try (BaseTable table = new BaseTable(file, 5)) {
+        try (BaseTable table = new BaseTable(file, 5, BaseTable.READ_WRITE)) {
             try (RangeLock rangeLock = table.getLock(0, 10, 1)) {
                 assertEquals(0, rangeLock.getStart());
                 assertTrue(rangeLock.hasLock());
@@ -172,7 +172,7 @@ public class BaseTableTest {
     @Test
     public void getLockCountTest() throws IOException {
 
-        try (BaseTable table = new BaseTable(file, 5)) {
+        try (BaseTable table = new BaseTable(file, 5, BaseTable.READ_WRITE)) {
             assertEquals(0, table.getLockCount());
 
             try (RangeLock rangeLock = table.getLock(0, 5, 1)) {
@@ -190,7 +190,7 @@ public class BaseTableTest {
     @Test
     public void getLockedBlocksTest() throws IOException {
         List<Integer> lst = new ArrayList<Integer>();
-        try (BaseTable table = new BaseTable(file, 5)) {
+        try (BaseTable table = new BaseTable(file, 5, BaseTable.READ_WRITE)) {
             table.getLockedBlocks(lst::add);
             assertEquals(0, lst.size());
             lst.clear();
@@ -216,7 +216,7 @@ public class BaseTableTest {
 
     @Test
     public void hasBlockTest() throws IOException {
-        try (BaseTable table = new BaseTable(file, 5)) {
+        try (BaseTable table = new BaseTable(file, 5, BaseTable.READ_WRITE)) {
             assertFalse(table.hasBlock(0));
             // verify looking didn't change things
             assertFalse(table.hasBlock(0));
@@ -235,7 +235,7 @@ public class BaseTableTest {
     public void syncTest() throws IOException {
         List<Integer> lst = new ArrayList<Integer>();
 
-        try (BaseTable table = new BaseTable(file, 5)) {
+        try (BaseTable table = new BaseTable(file, 5, BaseTable.READ_WRITE)) {
             // no locked buffers
             assertEquals(0, table.getLockCount());
 
