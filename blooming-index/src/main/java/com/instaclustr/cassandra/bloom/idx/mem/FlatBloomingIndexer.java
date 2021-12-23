@@ -119,7 +119,7 @@ public class FlatBloomingIndexer implements Indexer {
 
     private ByteBuffer getFilter(Row row) {
         Cell<?> cell = row.getCell(indexedColumn);
-        return cell == null? null:cell.buffer();
+        return cell == null ? null : cell.buffer();
     }
 
     @Override

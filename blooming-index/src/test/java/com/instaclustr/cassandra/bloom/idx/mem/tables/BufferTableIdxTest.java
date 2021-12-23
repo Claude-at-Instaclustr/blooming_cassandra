@@ -201,8 +201,8 @@ public class BufferTableIdxTest {
             assertFalse(entry2.isDeleted());
 
             // verify deleted list
-            IdxEntry entry = idxTable.search(  500 );
-            assertEquals( entry1, entry );
+            IdxEntry entry = idxTable.search(500);
+            assertEquals(entry1, entry);
             assertNoLocks(idxTable);
         }
 

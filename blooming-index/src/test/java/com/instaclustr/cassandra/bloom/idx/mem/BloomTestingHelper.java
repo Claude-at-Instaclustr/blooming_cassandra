@@ -28,7 +28,10 @@ public class BloomTestingHelper {
 
     public static ByteBuffer asByteBuffer(Hasher hasher, Shape shape) {
         ByteBuffer result = ByteBuffer.allocate(BitMap.numberOfBitMaps(shape.getNumberOfBits()) * Long.BYTES);
-        BitMapProducer.fromIndexProducer(hasher.indices(shape), shape.getNumberOfBits()).forEachBitMap((l) -> {result.putLong(l);return true;});
+        BitMapProducer.fromIndexProducer(hasher.indices(shape), shape.getNumberOfBits()).forEachBitMap((l) -> {
+            result.putLong(l);
+            return true;
+        });
         result.flip();
         return result;
     }

@@ -114,7 +114,7 @@ public class FlatBloomingSearcher implements Searcher {
     @Override
     public UnfilteredPartitionIterator search(ReadExecutionController executionController) {
 
-        //        List<AbstractType<?>> types = getKeysTypes();
+        // List<AbstractType<?>> types = getKeysTypes();
         // Create a function to convert DecoratedKey from the index to a Row from the
         // base table.
         Function<DecoratedKey, UnfilteredRowIterator> key2RowIter = new Function<DecoratedKey, UnfilteredRowIterator>() {
@@ -125,7 +125,8 @@ public class FlatBloomingSearcher implements Searcher {
                 } catch (CharacterCodingException e) {
                     logger.debug("Reading row {}", hit);
                 }
-                //               Clustering<?> clutering = Clustering.serializer.deserialize( hit.getKey(), 0x0a, types);
+                // Clustering<?> clutering = Clustering.serializer.deserialize( hit.getKey(),
+                // 0x0a, types);
                 //
                 ColumnFilter extendedFilter = getExtendedFilter(command.columnFilter());
                 SinglePartitionReadCommand dataCmd = SinglePartitionReadCommand.create(baseCfs.metadata(),

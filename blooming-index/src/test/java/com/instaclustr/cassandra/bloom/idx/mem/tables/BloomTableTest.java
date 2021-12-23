@@ -183,7 +183,7 @@ public class BloomTableTest {
         int numberOfBits = 302;
         ByteBuffer bb = ByteBuffer.allocate(5 * Long.BYTES);
         bb.putLong(0x2600201000084008L).putLong(0x9008804002010200L).putLong(0x4220030080048000L)
-                .putLong(0x0c00881008204020L).putLong(0x0000006208010800L).flip();
+        .putLong(0x0c00881008204020L).putLong(0x0000006208010800L).flip();
 
         try (BloomTable bloomTable = new BloomTable(numberOfBits, file)) {
             bloomTable.setBloomAt(1, bb.asLongBuffer());

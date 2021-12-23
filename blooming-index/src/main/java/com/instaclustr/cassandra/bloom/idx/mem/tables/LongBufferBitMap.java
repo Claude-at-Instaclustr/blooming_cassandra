@@ -94,7 +94,7 @@ public class LongBufferBitMap {
         }
         try {
             long mask = BitMap.getLongBit(idx);
-            return (buffer.get(BitMap.getLongIndex(idx)) & mask) == mask ;
+            return (buffer.get(BitMap.getLongIndex(idx)) & mask) == mask;
         } catch (IndexOutOfBoundsException e) {
             return false;
         }

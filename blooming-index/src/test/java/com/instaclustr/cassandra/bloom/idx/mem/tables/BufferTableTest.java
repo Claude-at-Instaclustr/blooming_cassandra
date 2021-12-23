@@ -124,15 +124,13 @@ public class BufferTableTest {
             table.set(3, ByteBuffer
                     .wrap("Now is the time for all good people to come to the aid of their planet".getBytes()));
 
-
-
             ByteBuffer result = table.get(1);
-            assertEquals( 0, result.position() );
-            assertEquals( 11, result.remaining() );
+            assertEquals(0, result.position());
+            assertEquals(11, result.remaining());
 
             result = table.get(2);
-            assertEquals( 11, result.position() );
-            assertEquals( 20, result.remaining() );
+            assertEquals(11, result.position());
+            assertEquals(20, result.remaining());
 
         }
 
@@ -175,6 +173,5 @@ public class BufferTableTest {
         }
 
     }
-
 
 }

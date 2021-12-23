@@ -33,7 +33,6 @@ import org.apache.commons.cli.Options;
 import org.apache.commons.collections4.bloomfilter.BitMap;
 import org.apache.commons.collections4.bloomfilter.BitMapProducer;
 import org.apache.commons.collections4.bloomfilter.IndexProducer;
-import org.apache.commons.collections4.bloomfilter.Shape;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

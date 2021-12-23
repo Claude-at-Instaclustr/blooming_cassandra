@@ -225,19 +225,19 @@ public class FlatBloomingIndexSerde {
 
     }
 
-    //    public void retryOnTimeout( Func fn ) throws Exception {
-    //        while (true) {
-    //            try {
-    //                fn.call();
-    //                return;
-    //            } catch (OutputTimeoutException e) {
-    //                logger.debug( "Timeout  executing {}, trying again", fn);
-    //            } catch (Exception e) {
-    //                logger.warn( "Error {} attempting {}", e, fn);
-    //                throw e;
-    //            }
-    //        }
-    //    }
+    // public void retryOnTimeout( Func fn ) throws Exception {
+    // while (true) {
+    // try {
+    // fn.call();
+    // return;
+    // } catch (OutputTimeoutException e) {
+    // logger.debug( "Timeout executing {}, trying again", fn);
+    // } catch (Exception e) {
+    // logger.warn( "Error {} attempting {}", e, fn);
+    // throw e;
+    // }
+    // }
+    // }
 
     /**
      * Inserts a new entry into the index.
