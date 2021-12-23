@@ -33,6 +33,7 @@ public class IdxMap extends BaseTable implements AutoCloseable {
     private static final Logger LOG = LoggerFactory.getLogger(IdxMap.class);
 
     public static final int BLOCK_BYTES = 1 + Integer.BYTES;
+    private static final byte INITIALIZED_FLAG = (byte)0x01;
 
     interface Entry {
         public int getBlock();
@@ -64,7 +65,7 @@ public class IdxMap extends BaseTable implements AutoCloseable {
 
         @Override
         public boolean isInitialized() {
-            return (buffer.get(block * BLOCK_BYTES) & 0x01) > 0;
+            return (buffer.get(block * BLOCK_BYTES) & INITIALIZED_FLAG) == INITIALIZED_FLAG;
         }
 
         @Override
@@ -106,11 +107,11 @@ public class IdxMap extends BaseTable implements AutoCloseable {
 
         @Override
         public boolean isInitialized() {
-            return (flag & 0x01) > 0;
+            return (flag & INITIALIZED_FLAG) != INITIALIZED_FLAG;
         }
 
         public void setInitialized(boolean state) {
-            flag = (byte) (state ? 0x01 : 0);
+            flag = state ? INITIALIZED_FLAG : 0;
         }
 
     }

@@ -42,7 +42,7 @@ public class BufferTableIdx extends BaseTable implements AutoCloseable {
         return (byte) (1 << bit);
     }
 
-    private ConcurrentSkipListSet<IdxEntry> deletedEntries = new ConcurrentSkipListSet<>();
+    private ConcurrentSkipListSet<Entry> deletedEntries = new ConcurrentSkipListSet<>();
     private volatile ByteBuffer buffer;
 
     /**
@@ -57,45 +57,73 @@ public class BufferTableIdx extends BaseTable implements AutoCloseable {
      */
     private static byte INVALID_FLG = (byte) (DELETED_FLG | UNINITIALIZED_FLG);
 
-    private static int FLAG_BYTE = 0;
+    // the first byte is the Flag byte
     private static int OFFSET_BYTE = 1;
     private static int LEN_BYTE = OFFSET_BYTE + Integer.BYTES;
     private static int ALLOC_BYTE = LEN_BYTE + Integer.BYTES;
     private static int BLOCK_SIZE = ALLOC_BYTE + Integer.BYTES;
 
-    /**
-     * Package private so that other classes in this package can use it.
-     *
-     */
-    class IdxEntry implements Comparable<IdxEntry> {
+    public abstract class Entry implements Comparable<Entry> {
 
-        // /**
-        // * The block number for this entry
-        // */
-        // private int block;
-        /**
-         * The byte offset into the file for this entry.
-         */
         private int offset;
 
-        IdxEntry(int block) throws IOException {
-            if (!checkBlockAlignment(getFileSize(), BLOCK_SIZE)) {
-                throw new IllegalStateException("Blocks are not aligned with file");
-            }
-            this.offset = block * BLOCK_SIZE;
+        protected Entry( int offset) {
+            this.offset = offset;
         }
 
-        @Override
-        public String toString() {
-            return String.format("BufferTableIdx[ b:%s o:%s ]", getBlock(), offset);
+        public final int getBlockOffset() {
+            return offset;
         }
 
         /**
          * Gets the table block for this entry.
          * @return the table block for this entry.
          */
-        public int getBlock() {
-            return this.offset / BLOCK_SIZE;
+        public final int getBlock() {
+            return getBlockOffset() / BLOCK_SIZE;
+        }
+
+
+        public abstract int getAlloc();
+
+        @Override
+        public final int compareTo(Entry arg0) {
+            int result = Integer.compare(getAlloc(), arg0.getAlloc());
+            if (result == 0) {
+                result = Integer.compare(getBlockOffset(), arg0.getBlockOffset());
+            }
+            return result;
+        }
+
+        @Override
+        public final boolean equals(Object obj) {
+            return (obj instanceof Entry) ? compareTo((Entry) obj) == 0 : false;
+        }
+
+
+        @Override
+        public final int hashCode() {
+            return getAlloc();
+        }
+
+        @Override
+        public final String toString() {
+            return String.format("%s[ b:%s o:%s ]", this.getClass().getSimpleName(), getBlock(), getBlockOffset());
+        }
+
+    }
+
+    /**
+     * Package private so that other classes in this package can use it.
+     *
+     */
+    class IdxEntry extends Entry {
+
+        IdxEntry(int block) throws IOException {
+            super( block * BLOCK_SIZE );
+            if (!checkBlockAlignment(getFileSize(), BLOCK_SIZE)) {
+                throw new IllegalStateException("Blocks are not aligned with file");
+            }
         }
 
         /**
@@ -106,7 +134,7 @@ public class BufferTableIdx extends BaseTable implements AutoCloseable {
          */
         private void doPut(int blockOffset, int value) throws IOException {
             final ByteBuffer writeBuffer = getWritableBuffer();
-            final int startByte = offset + blockOffset;
+            final int startByte = getBlockOffset() + blockOffset;
             sync(() -> writeBuffer.putInt(startByte, value), startByte, Integer.BYTES, 4);
         }
 
@@ -118,7 +146,7 @@ public class BufferTableIdx extends BaseTable implements AutoCloseable {
          */
         private void setFlg(byte flag, boolean state) throws IOException {
             final ByteBuffer writeBuffer = getWritableBuffer();
-            final int startByte = offset + FLAG_BYTE;
+            final int startByte = getBlockOffset();
             boolean wasAvailable = isAvailable();
             if (state) {
                 sync(() -> writeBuffer.put(startByte, (byte) (writeBuffer.get(startByte) | flag)), startByte, 1, 4);
@@ -135,7 +163,7 @@ public class BufferTableIdx extends BaseTable implements AutoCloseable {
         }
 
         public RangeLock lock(int retryCount) throws OutputTimeoutException {
-            return getLock(offset, BLOCK_SIZE, retryCount);
+            return getLock(getBlockOffset(), BLOCK_SIZE, retryCount);
         }
 
         /**
@@ -145,7 +173,7 @@ public class BufferTableIdx extends BaseTable implements AutoCloseable {
          * @return true the state returned by the predicate.
          */
         private boolean checkFlag(IntPredicate predicate) {
-            return predicate.test(buffer.get(offset + FLAG_BYTE));
+            return predicate.test(buffer.get(getBlockOffset()));
         }
 
         /**
@@ -153,7 +181,7 @@ public class BufferTableIdx extends BaseTable implements AutoCloseable {
          * @return true if the deleted flag is set.
          */
         public boolean isDeleted() {
-            return checkFlag((b) -> (b & DELETED_FLG) > 0);
+            return checkFlag((b) -> (b & DELETED_FLG) == DELETED_FLG);
         }
 
         /**
@@ -206,15 +234,15 @@ public class BufferTableIdx extends BaseTable implements AutoCloseable {
          * @return true if the entry is initialized, false otherwise.
          */
         public boolean isInitialized() {
-            return !checkFlag((b) -> (b & UNINITIALIZED_FLG) > 0);
+            return !checkFlag((b) -> (b & UNINITIALIZED_FLG) == UNINITIALIZED_FLG);
         }
 
         /**
          * Gets the offset in the data table this index points to..
          * @return the offset in the data table for the buffer this index is for.
          */
-        int getOffset() {
-            return buffer.getInt(offset + OFFSET_BYTE);
+        public int getOffset() {
+            return buffer.getInt(getBlockOffset() + OFFSET_BYTE);
         }
 
         /**
@@ -230,8 +258,8 @@ public class BufferTableIdx extends BaseTable implements AutoCloseable {
          * Gets the length of the data table entry that is filled by data.
          * @return the length of the data table entry.
          */
-        int getLen() {
-            return buffer.getInt(offset + LEN_BYTE);
+        public int getLen() {
+            return buffer.getInt(getBlockOffset() + LEN_BYTE);
         }
 
         /**
@@ -247,8 +275,9 @@ public class BufferTableIdx extends BaseTable implements AutoCloseable {
          * Gets the allocated space in the data table for this entry.
          * @return the allcoated space in the data table for this entry.
          */
-        int getAlloc() {
-            return buffer.getInt(offset + ALLOC_BYTE);
+        @Override
+        public int getAlloc() {
+            return buffer.getInt(getBlockOffset() + ALLOC_BYTE);
         }
 
         /**
@@ -267,28 +296,23 @@ public class BufferTableIdx extends BaseTable implements AutoCloseable {
          * @throws OutputTimeoutException if the lock could not be achieved.
          */
         public RangeLock lock() throws OutputTimeoutException {
-            return getLock(offset, BLOCK_SIZE, 4);
+            return getLock(getBlockOffset(), BLOCK_SIZE, 4);
+        }
+    }
+
+    class SearchEntry extends Entry {
+
+        private int alloc;
+
+        SearchEntry( int alloc ) {
+            super( -1 );
+            this.alloc = alloc;
         }
 
         @Override
-        public int compareTo(IdxEntry arg0) {
-            int result = Integer.compare(getAlloc(), arg0.getAlloc());
-            if (result == 0) {
-                result = Integer.compare(getOffset(), arg0.getOffset());
-            }
-            return result;
+        public int getAlloc() {
+            return alloc;
         }
-
-        @Override
-        public boolean equals(Object obj) {
-            return (obj instanceof IdxEntry) ? compareTo((IdxEntry) obj) == 0 : false;
-        }
-
-        @Override
-        public int hashCode() {
-            return getAlloc();
-        }
-
     }
 
     public static void main(String[] args) throws IOException {
@@ -381,19 +405,9 @@ public class BufferTableIdx extends BaseTable implements AutoCloseable {
      */
     public IdxEntry search(int length) throws IOException {
         if (!deletedEntries.isEmpty()) {
-            IdxEntry entry = new IdxEntry(-1) {
-
-                @Override
-                int getOffset() {
-                    return -1;
-                }
-
-                @Override
-                int getAlloc() {
-                    return length;
-                }
-            };
-            IdxEntry idx = deletedEntries.higher(entry);
+            SearchEntry entry = new SearchEntry( length);
+            IdxEntry idx = (IdxEntry) deletedEntries.higher(entry);
+            logger.debug( "Search located entry {} {}", idx.getBlock(), idx.getAlloc());
             boolean good = false;
 
             try {
@@ -405,10 +419,9 @@ public class BufferTableIdx extends BaseTable implements AutoCloseable {
                     } else {
                         return false;
                     }
-                }, idx.offset, BLOCK_SIZE, 0);
+                }, idx.getBlockOffset(), BLOCK_SIZE, 0);
                 if (good) {
-                    deletedEntries.remove(idx);
-                    return idx;
+                   return idx;
                 }
             } catch (IOException e) {
                 // fall through

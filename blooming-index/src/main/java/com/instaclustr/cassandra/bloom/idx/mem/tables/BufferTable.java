@@ -197,7 +197,7 @@ public class BufferTable extends BaseTable {
      */
     private BufferTableIdx.IdxEntry add(ByteBuffer buff) throws IOException {
         int length = buff.remaining();
-        int position = extendBytes(buff.remaining());
+        int position = extendBytes(length);
         ByteBuffer writeBuffer = getWritableBuffer();
         writeBuffer.position(position);
         sync(() -> writeBuffer.put(buff), position, length, 4);
@@ -210,52 +210,49 @@ public class BufferTable extends BaseTable {
      * @param buff
      * @throws IOException
      */
-    private void setKey(BufferTableIdx.IdxEntry keyIdxEntry, ByteBuffer buff) throws IOException {
-        Stack<Func> undo = new Stack<Func>();
+    private void set(BufferTableIdx.IdxEntry keyIdxEntry, ByteBuffer buff) throws IOException {
+        //Stack<Func> undo = new Stack<Func>();
         try (RangeLock lock = keyIdxEntry.lock()) {
-            undo.add(() -> keyIdxEntry.setDeleted(true));
             keyIdxEntry.setLen(buff.remaining());
             ByteBuffer writeBuffer = getWritableBuffer();
             writeBuffer.position(keyIdxEntry.getOffset());
             sync(() -> writeBuffer.put(buff), keyIdxEntry.getOffset(), keyIdxEntry.getLen(), 4);
             keyIdxEntry.setDeleted(false);
         } catch (IOException e) {
-            execQuietly(undo);
+            execQuietly(() -> keyIdxEntry.setDeleted(true));
             throw e;
         }
     }
 
     private BufferTableIdx.IdxEntry createNewEntry(int idx, ByteBuffer buff) throws IOException {
 
-        Stack<Func> undo = new Stack<Func>();
-
         BufferTableIdx.IdxEntry keyIdxEntry = null;
         try {
             keyIdxEntry = keyTableIdx.search(buff.remaining());
-            final BufferTableIdx.IdxEntry deleteKey = keyIdxEntry;
-            undo.push(() -> {
-                deleteKey.setInitialized(true);
-                deleteKey.setDeleted(true);
-            });
         } catch (IOException e1) {
             // ignore and try to create a new one.
         }
         try {
             if (keyIdxEntry == null) {
                 keyIdxEntry = add(buff);
-                final BufferTableIdx.IdxEntry deleteKey = keyIdxEntry;
-                undo.push(() -> {
-                    deleteKey.setInitialized(true);
-                    deleteKey.setDeleted(true);
-                });
                 idxTable.get(idx).setKeyIdx(keyIdxEntry.getBlock());
                 keyIdxEntry.setInitialized(true);
             } else {
-                setKey(keyIdxEntry, buff);
+                set(keyIdxEntry, buff);
             }
             return keyIdxEntry;
         } catch (IOException e) {
-            execQuietly(undo);
+            if (keyIdxEntry != null) {
+                try {
+                    BufferTableIdx.IdxEntry entry = keyIdxEntry;
+                    keyTableIdx.retryOnTimeout( () -> {
+                        entry.setInitialized(true);
+                        entry.setDeleted(true);
+                    });
+                } catch (Exception e1) {
+                    LOG.error( "Error freeing keyIdx "+keyIdxEntry.getOffset(), e );
+                }
+            }
             throw e;
         }
 
@@ -266,8 +263,9 @@ public class BufferTable extends BaseTable {
         if (mapEntry.isInitialized()) {
             // we are reusing the key so see if the buffer fits.
             BufferTableIdx.IdxEntry keyIdxEntry = keyTableIdx.get(mapEntry.getKeyIdx());
+            LOG.debug( "checking for {} bytes. {}", buff.remaining(), keyIdxEntry.getAlloc()  );
             if (keyIdxEntry.getAlloc() >= buff.remaining()) {
-                setKey(keyIdxEntry, buff);
+                set(keyIdxEntry, buff);
             } else {
                 // buffer did not fit so we need a new one and we need to free the old one.
                 BufferTableIdx.IdxEntry newKeyIdxEntry = null;

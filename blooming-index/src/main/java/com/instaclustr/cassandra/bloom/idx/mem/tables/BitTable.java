@@ -237,7 +237,8 @@ public class BitTable extends BaseTable implements AutoCloseable {
         LongBuffer buff = getLongBuffer();
         try {
             int wordIdx = BitMap.getLongIndex(idx);
-            return (buff.get(wordIdx) & BitMap.getLongBit(idx)) > 0;
+            long mask = BitMap.getLongBit(idx);
+            return (buff.get(wordIdx) & mask) == mask;
         } catch (IndexOutOfBoundsException exception) {
             // looked beyond buffer so not set.
             return false;
