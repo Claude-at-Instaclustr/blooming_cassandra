@@ -283,7 +283,7 @@ public class FlatBloomingIndexSerde {
 
         Clustering<?> indexClustering = buildIndexClustering(row.clustering());
         Row btRow = BTreeRow.emptyDeletedRow(indexClustering, Row.Deletion.regular(deletedAt));
-        PartitionUpdate upd = partitionUpdate(rowKey, btRow);
+        PartitionUpdate upd = partitionUpdate(convertToIndexKey(rowKey), btRow);
         indexCfs.getWriteHandler().write(upd, ctx, UpdateTransaction.NO_OP);
         logger.trace("Removed index entry for value {}", rowKey);
     }

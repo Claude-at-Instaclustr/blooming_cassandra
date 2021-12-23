@@ -93,7 +93,8 @@ public class LongBufferBitMap {
             throw new IndexOutOfBoundsException(String.format("idx (%s) may not be less than zero (0)", idx));
         }
         try {
-            return (buffer.get(BitMap.getLongIndex(idx)) & BitMap.getLongBit(idx)) > 0;
+            long mask = BitMap.getLongBit(idx);
+            return (buffer.get(BitMap.getLongIndex(idx)) & mask) == mask ;
         } catch (IndexOutOfBoundsException e) {
             return false;
         }

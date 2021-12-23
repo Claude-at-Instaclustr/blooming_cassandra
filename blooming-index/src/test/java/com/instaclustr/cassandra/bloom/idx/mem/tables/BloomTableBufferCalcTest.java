@@ -162,12 +162,23 @@ public class BloomTableBufferCalcTest {
     }
 
     @Test
-    public void testWeirdCase() throws IOException {
+    public void verifyBitPositionCalculation() throws IOException {
         teardown();
+        int numberOfBits = Long.SIZE + Integer.SIZE;
         file = new File(dir, "BloomTable");
-        bloomTable = new BloomTable(173, file);
+        bloomTable = new BloomTable(numberOfBits, file);
         calc = bloomTable.new BufferCalc();
+        Set<Integer> seen = new HashSet<Integer>();
+        for (int block = 0; block < 2; block++)
+            for (int j = 0; j < 64; j++) {
+                for (int i = 0; i < numberOfBits; i++) {
+                    int expected = (block*calc.getLengthInBytes()*Byte.SIZE)+j + (i * 64);
+                    int actual = calc.getBufferBitPosition((block * 64) + j, i);
+                    assertEquals(String.format("(%s %s,%s)", block, j, i), expected, actual);
+                    assertTrue("Already saw " + actual, seen.add(actual));
 
+                }
+            }
     }
 
 }

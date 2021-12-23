@@ -17,6 +17,8 @@
 package com.instaclustr.cassandra.bloom.idx.mem;
 
 import java.io.IOException;
+import java.nio.ByteBuffer;
+
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.db.DeletionTime;
 import org.apache.cassandra.db.RangeTombstone;
@@ -115,6 +117,11 @@ public class FlatBloomingIndexer implements Indexer {
         }
     }
 
+    private ByteBuffer getFilter(Row row) {
+        Cell<?> cell = row.getCell(indexedColumn);
+        return cell == null? null:cell.buffer();
+    }
+
     @Override
     public void updateRow(Row oldRowData, Row newRowData) {
         logger.trace("updateRow {} {}", oldRowData, newRowData);
@@ -124,8 +131,8 @@ public class FlatBloomingIndexer implements Indexer {
             }
             return;
         }
-        Cell<?> oldCell = oldRowData.getCell(indexedColumn);
-        Cell<?> newCell = newRowData.getCell(indexedColumn);
+        ByteBuffer oldCell = getFilter(oldRowData);
+        ByteBuffer newCell = getFilter(newRowData);
 
         if (oldCell != null && newCell != null) {
             if (serde.update(key, newRowData, nowInSec)) {
@@ -142,7 +149,7 @@ public class FlatBloomingIndexer implements Indexer {
 
     @Override
     public void removeRow(Row row) {
-        logger.trace("removeRow {} {}", row);
+        logger.trace("removeRow {}", row);
 
         if (row.isStatic())
             return;

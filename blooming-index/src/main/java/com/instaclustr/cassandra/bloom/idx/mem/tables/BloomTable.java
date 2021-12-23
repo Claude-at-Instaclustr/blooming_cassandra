@@ -80,7 +80,6 @@ public class BloomTable implements AutoCloseable {
 
     public void requeue(Func fn) {
         bitTable.requeue(fn);
-        ;
     }
 
     /**
