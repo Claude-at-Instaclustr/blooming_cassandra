@@ -67,7 +67,7 @@ public class BufferTableIdx extends BaseTable implements AutoCloseable {
 
         private int offset;
 
-        protected Entry( int offset) {
+        protected Entry(int offset) {
             this.offset = offset;
         }
 
@@ -82,7 +82,6 @@ public class BufferTableIdx extends BaseTable implements AutoCloseable {
         public final int getBlock() {
             return getBlockOffset() / BLOCK_SIZE;
         }
-
 
         public abstract int getAlloc();
 
@@ -99,7 +98,6 @@ public class BufferTableIdx extends BaseTable implements AutoCloseable {
         public final boolean equals(Object obj) {
             return (obj instanceof Entry) ? compareTo((Entry) obj) == 0 : false;
         }
-
 
         @Override
         public final int hashCode() {
@@ -120,7 +118,7 @@ public class BufferTableIdx extends BaseTable implements AutoCloseable {
     class IdxEntry extends Entry {
 
         IdxEntry(int block) throws IOException {
-            super( block * BLOCK_SIZE );
+            super(block * BLOCK_SIZE);
             if (!checkBlockAlignment(getFileSize(), BLOCK_SIZE)) {
                 throw new IllegalStateException("Blocks are not aligned with file");
             }
@@ -304,8 +302,8 @@ public class BufferTableIdx extends BaseTable implements AutoCloseable {
 
         private int alloc;
 
-        SearchEntry( int alloc ) {
-            super( -1 );
+        SearchEntry(int alloc) {
+            super(-1);
             this.alloc = alloc;
         }
 
@@ -405,9 +403,9 @@ public class BufferTableIdx extends BaseTable implements AutoCloseable {
      */
     public IdxEntry search(int length) throws IOException {
         if (!deletedEntries.isEmpty()) {
-            SearchEntry entry = new SearchEntry( length);
+            SearchEntry entry = new SearchEntry(length);
             IdxEntry idx = (IdxEntry) deletedEntries.higher(entry);
-            logger.debug( "Search located entry {} {}", idx.getBlock(), idx.getAlloc());
+            logger.debug("Search located entry {} {}", idx.getBlock(), idx.getAlloc());
             boolean good = false;
 
             try {
@@ -421,7 +419,7 @@ public class BufferTableIdx extends BaseTable implements AutoCloseable {
                     }
                 }, idx.getBlockOffset(), BLOCK_SIZE, 0);
                 if (good) {
-                   return idx;
+                    return idx;
                 }
             } catch (IOException e) {
                 // fall through

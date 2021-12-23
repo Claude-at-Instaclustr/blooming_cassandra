@@ -33,7 +33,7 @@ public class IdxMap extends BaseTable implements AutoCloseable {
     private static final Logger LOG = LoggerFactory.getLogger(IdxMap.class);
 
     public static final int BLOCK_BYTES = 1 + Integer.BYTES;
-    private static final byte INITIALIZED_FLAG = (byte)0x01;
+    private static final byte INITIALIZED_FLAG = (byte) 0x01;
 
     interface Entry {
         public int getBlock();

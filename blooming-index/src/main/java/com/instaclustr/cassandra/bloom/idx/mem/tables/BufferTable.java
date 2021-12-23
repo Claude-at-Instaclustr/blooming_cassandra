@@ -20,7 +20,6 @@ import java.io.File;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.nio.ByteBuffer;
-import java.util.Stack;
 import java.util.function.IntConsumer;
 
 import org.apache.commons.cli.CommandLine;
@@ -211,7 +210,7 @@ public class BufferTable extends BaseTable {
      * @throws IOException
      */
     private void set(BufferTableIdx.IdxEntry keyIdxEntry, ByteBuffer buff) throws IOException {
-        //Stack<Func> undo = new Stack<Func>();
+        // Stack<Func> undo = new Stack<Func>();
         try (RangeLock lock = keyIdxEntry.lock()) {
             keyIdxEntry.setLen(buff.remaining());
             ByteBuffer writeBuffer = getWritableBuffer();
@@ -245,12 +244,12 @@ public class BufferTable extends BaseTable {
             if (keyIdxEntry != null) {
                 try {
                     BufferTableIdx.IdxEntry entry = keyIdxEntry;
-                    keyTableIdx.retryOnTimeout( () -> {
+                    keyTableIdx.retryOnTimeout(() -> {
                         entry.setInitialized(true);
                         entry.setDeleted(true);
                     });
                 } catch (Exception e1) {
-                    LOG.error( "Error freeing keyIdx "+keyIdxEntry.getOffset(), e );
+                    LOG.error("Error freeing keyIdx " + keyIdxEntry.getOffset(), e);
                 }
             }
             throw e;
@@ -263,7 +262,7 @@ public class BufferTable extends BaseTable {
         if (mapEntry.isInitialized()) {
             // we are reusing the key so see if the buffer fits.
             BufferTableIdx.IdxEntry keyIdxEntry = keyTableIdx.get(mapEntry.getKeyIdx());
-            LOG.debug( "checking for {} bytes. {}", buff.remaining(), keyIdxEntry.getAlloc()  );
+            LOG.debug("checking for {} bytes. {}", buff.remaining(), keyIdxEntry.getAlloc());
             if (keyIdxEntry.getAlloc() >= buff.remaining()) {
                 set(keyIdxEntry, buff);
             } else {
