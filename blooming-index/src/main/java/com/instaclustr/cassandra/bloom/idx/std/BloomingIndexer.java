@@ -39,7 +39,7 @@ import org.apache.commons.collections4.bloomfilter.BitMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.instaclustr.cassandra.bloom.idx.CountingFilter;
+import com.instaclustr.cassandra.bloom.idx.CountingPredicate;
 import com.instaclustr.iterator.util.ExtendedIterator;
 import com.instaclustr.iterator.util.WrappedIterator;
 
@@ -181,9 +181,9 @@ public class BloomingIndexer implements Indexer {
      * @throws Exception
      */
     private void update(Consumer<IndexKey> operation, ExtendedIterator<IndexKey> rows, String op) {
-        CountingFilter<IndexKey> counting = null;
+        CountingPredicate<IndexKey> counting = null;
         if (logger.isDebugEnabled()) {
-            counting = new CountingFilter<IndexKey>();
+            counting = new CountingPredicate<IndexKey>();
             rows.filterKeep(counting);
         }
 

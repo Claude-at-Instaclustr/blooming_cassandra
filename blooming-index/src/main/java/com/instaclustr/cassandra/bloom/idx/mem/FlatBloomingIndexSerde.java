@@ -59,7 +59,7 @@ import com.instaclustr.cassandra.bloom.idx.mem.tables.BaseTable.OutputTimeoutExc
 import com.instaclustr.cassandra.bloom.idx.mem.tables.BufferTable;
 
 /**
- * Handles all IO to the index table.
+ * Handles all IO to the index tables.
  *
  */
 public class FlatBloomingIndexSerde {
@@ -76,17 +76,29 @@ public class FlatBloomingIndexSerde {
      */
     private final ColumnFamilyStore indexCfs;
 
+    /**
+     * The FlatBloofi we are using.
+     */
     private final FlatBloofi flatBloofi;
+
+    /**
+     * The key table.
+     */
     private final BufferTable keyTable;
+
+    /**
+     * The column metadata for the index column.
+     */
     private final ColumnMetadata idxColumn;
 
     /**
-     * Construct the BloomingIndex serializer/deserializer.
+     * Construct the FlatBloomingIndex serializer/deserializer.
      *
      * <p>Defines the index table ColumnFamilyStore</p>
      *
-     * @param baseCfs
-     * @param indexMetadata
+     * @param baseCfs the Base table ColumnFamilyStore.
+     * @param indexMetadata the Index metadata.
+     * @param numberofBits The number of bits in the Bloom filters.
      */
     public FlatBloomingIndexSerde(File dir, ColumnFamilyStore baseCfs, IndexMetadata indexMetadata, int numberOfBits) {
 
@@ -190,10 +202,21 @@ public class FlatBloomingIndexSerde {
         return builder.build();
     }
 
+    /**
+     * Performs the insert into the index.
+     * @param idx the Index id.
+     * @param rowKey the Base table key for the row being inserted.
+     * @param bloomFilter the Bloom filter being inserted.
+     * @param clustering the Clustering columns for the Base table.
+     * @param timestamp the time of the insert.
+     * @param ctx the write context to write with.
+     * @throws IOException on IO error.
+     */
     private void doInsert(int idx, DecoratedKey rowKey, ByteBuffer bloomFilter, Clustering<?> clustering,
             long timestamp, WriteContext ctx) throws IOException {
         if (rowKey.getKey().remaining() == 0) {
             logger.error("Invalid key length for {}", rowKey);
+            throw new IOException(String.format("Invalid key length for %s", rowKey) );
         }
 
         /* create new record */
@@ -225,27 +248,14 @@ public class FlatBloomingIndexSerde {
 
     }
 
-    // public void retryOnTimeout( Func fn ) throws Exception {
-    // while (true) {
-    // try {
-    // fn.call();
-    // return;
-    // } catch (OutputTimeoutException e) {
-    // logger.debug( "Timeout executing {}, trying again", fn);
-    // } catch (Exception e) {
-    // logger.warn( "Error {} attempting {}", e, fn);
-    // throw e;
-    // }
-    // }
-    // }
-
     /**
-     * Inserts a new entry into the index.
-     * @param indexKey The key for the index.
-     * @param rowKey the key for the row being indexed.
-     * @param clustering the clustering for the row being indexed.
-     * @param info the liveness of the primary key columns of the index row
+     * Inserts a new entry into the index.  Will update an existing entry or create a new one as necessary.
+     * @param nowInSec the time of the insert in seconds.
+     * @param rowKey the Base table key for the row being inserted.
+     * @param row the Row being inserted.
+     * @param timestamp the time of the insert.
      * @param ctx the write context to write with.
+     * @param bloomFilter the Bloom filter being inserted.
      * @throws IOException on IOError
      */
     public void insert(int nowInSec, DecoratedKey rowKey, Row row, long timestamp, WriteContext ctx,
@@ -263,11 +273,9 @@ public class FlatBloomingIndexSerde {
     }
 
     /**
-     * Deletes an entry from the index table.
+     * Deletes an entry from the index.
      *
-     * @param indexKey The index key to delete.
-     * @param rowKey the key for the row being indexed.
-     * @param clustering the clustering for the row being indexed.
+     * @param rowKey the Base table key for the row being deleted.
      * @param deletedAt the time when the row was deleted
      * @param ctx the write context to write with.
      */
@@ -289,13 +297,12 @@ public class FlatBloomingIndexSerde {
     }
 
     /**
-     * Deletes an entry from the index table.
+     * Updates an entry from the index.  Will only perform update if the row is already indexed.
      *
-     * @param indexKey The index key to delete.
-     * @param rowKey the key for the row being indexed.
+     * @param rowKey the Base table key for the row being updated.
      * @param clustering the clustering for the row being indexed.
-     * @param deletedAt the time when the row was deleted
-     * @param ctx the write context to write with.
+     * @param bloomFilter the Bloom filter being inserted.
+     * @return {@code true} on success,{@code false} if no update occured.
      */
     public boolean update(DecoratedKey rowKey, Clustering<?> clustering, int nowInSec, ByteBuffer bloomFilter) {
         logger.debug("Updating {}", rowKey);
@@ -311,6 +318,13 @@ public class FlatBloomingIndexSerde {
         return false;
     }
 
+    /**
+     * Searches for an entry in the index.  Will only perform update if the row is already indexed.
+     *
+     * @param consumer A consumer to accept the found Bloom filters.
+     * @param bloomFilter the Bloom filter to search for.
+     * @throws IOException on IO error.
+     */
     public void search(Consumer<ByteBuffer> consumer, ByteBuffer bloomFilter) throws IOException {
         IntConsumer intConsumer = new IntConsumer() {
 
@@ -343,6 +357,8 @@ public class FlatBloomingIndexSerde {
 
     /**
      * Invalidates the index so that it will no longer be used.
+     *
+     * This will delete data for the index.
      */
     public void invalidate() {
         // interrupt in-progress compactions
@@ -357,33 +373,22 @@ public class FlatBloomingIndexSerde {
         keyTable.drop();
     }
 
-    // /**
-    // * Reads the index table for all entries with the IndexKey.
-    // * @param indexKey the key to locate.
-    // * @param nowInSec The time of the query.
-    // * @param executionController the execution controller to use.
-    // * @return the UnfilteredRowIterator containing all matching entries.
-    // */
-    // public int read(IndexKey indexKey, int nowInSec, ReadExecutionController
-    // executionController) {
-    // TableMetadata indexMetadata = indexCfs.metadata();
-    // DecoratedKey valueKey = getIndexKeyFor(indexKey.asKey());
-    // return SinglePartitionReadCommand.fullPartitionRead(indexMetadata, nowInSec,
-    // valueKey)
-    // .queryMemtableAndDisk(indexCfs, executionController.indexReadController());
-    //
-    // }
-
+    /**
+     * Convert a row key to an index key.
+     * @param rowKey the Base table key for the row being indexed.
+     * @return the Index table key for the row being indexed.
+     */
     private DecoratedKey convertToIndexKey(DecoratedKey rowKey) {
         return indexCfs.decorateKey(rowKey.getKey());
     }
 
     /**
-     * Reads the index table for all entries with the IndexKey.
-     * @param indexKey the key to locate.
-     * @param nowInSec The time of the query.
-     * @param executionController the execution controller to use.
-     * @return the UnfilteredRowIterator containing all matching entries.
+     * Reads the index table for the Bloom filter index associated with the Row key.
+     * @param nowInSec the time of the read.
+     * @param rowKey the Base table key for the row being read.
+     * @param clustering the Clustering columns for the Base table.
+     * @return index value or {@code BufferTable.UNSET} if not found
+     * @see BufferTable#UNSET
      */
     private int read(int nowInSec, DecoratedKey rowKey, Clustering<?> clustering) {
         SinglePartitionReadCommand readCommand = SinglePartitionReadCommand.create(indexCfs.metadata(), nowInSec,

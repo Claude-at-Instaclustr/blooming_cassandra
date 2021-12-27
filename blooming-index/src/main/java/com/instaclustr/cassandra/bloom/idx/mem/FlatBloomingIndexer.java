@@ -56,16 +56,18 @@ public class FlatBloomingIndexer implements Indexer {
      */
     private final WriteContext ctx;
 
+    /**
+     * The Serde to use to read/write index data.
+     */
     private final FlatBloomingIndexSerde serde;
 
     /**
      * Constructor
-     * @param key The key for the base table.
-     * @param baseCfs The base data table
      * @param serde The serde to read/write the index table.
-     * @param indexedColumn The time this operation was started.
+     * @param key The key for the base table.
+     * @param indexedColumn The indexColumn meta data..
      * @param nowInSec The time this operation was started.
-     * @param ctx The context use for writing.
+     * @param ctx The context used for writing.
      */
     public FlatBloomingIndexer(FlatBloomingIndexSerde serde, final DecoratedKey key, final ColumnMetadata indexedColumn,
             final int nowInSec, final WriteContext ctx) {
@@ -117,6 +119,11 @@ public class FlatBloomingIndexer implements Indexer {
         }
     }
 
+    /**
+     * Get the ByteBuffer for the indexed column in the row.
+     * @param row the row to process.
+     * @return the ByteBuffer or {@code null} if the cell was not in the row.
+     */
     private ByteBuffer getFilter(Row row) {
         Cell<?> cell = row.getCell(indexedColumn);
         return cell == null ? null : cell.buffer();

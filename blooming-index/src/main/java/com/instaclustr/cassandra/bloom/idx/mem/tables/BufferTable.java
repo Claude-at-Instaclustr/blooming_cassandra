@@ -59,13 +59,13 @@ public class BufferTable extends BaseTable {
     public static Options getOptions() {
         Options options = new Options();
         options.addOption("h", "help", false, "This help");
-        Option option = new Option("b", "block-size", true, "The size in bytes of the table blocks");
+        Option option = new Option("b", "block-size", true, "The size in bytes of the table blocks.");
         option.setRequired(true);
         options.addOption(option);
         option = new Option("i", "input", true, "The Buffer Table file to process.");
         option.setRequired(true);
         options.addOption(option);
-        options.addOption("o", "output", true, "Output file.  If not specified results will not be preserved");
+        options.addOption("o", "output", true, "Output file.  If not specified results will be printed to standard out.");
         return options;
     }
 

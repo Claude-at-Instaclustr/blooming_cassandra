@@ -56,9 +56,19 @@ public final class FlatBloofi implements AutoCloseable {
      * bit packed set of 64 flags, one for each entry.
      */
     private final BitTable busy;
+    /*
+     * The Bloom table
+     */
     private final BloomTable buffer;
+    /**
+     * The number of bits in each Bloom filter.
+     */
     private final int numberOfBits;
 
+    /**
+     * Creates the options for the command line utility.
+     * @return the Options structure.
+     */
     public static Options getOptions() {
         Options options = new Options();
         options.addOption("h", "help", false, "This help");
@@ -68,11 +78,16 @@ public final class FlatBloofi implements AutoCloseable {
         option = new Option("d", "directory", true, "The directory with FlatBloofi files to process.");
         option.setRequired(true);
         options.addOption(option);
-        options.addOption("o", "output", true, "Output file.  If not specified results will not be preserved");
-        options.addOption("i", "index", true, "A specific index to display/dump.  May be specified more than once");
+        options.addOption("o", "output", true, "Output file.  If not specified results will be printed to Standard out.");
+        options.addOption("i", "index", true, "A specific index to display/dump.  May be specified more than once.");
         return options;
     }
 
+    /**
+     * Tehe command line utility.
+     * @param args The arguments for the options.
+     * @throws IOException on IO Error.
+     */
     public static void main(String[] args) throws IOException {
         HelpFormatter formatter = new HelpFormatter();
         CommandLineParser parser = new DefaultParser();
@@ -116,7 +131,7 @@ public final class FlatBloofi implements AutoCloseable {
             out = new PrintStream(f);
         }
 
-        out.println("'index','active','filter'");
+        out.println("'index','deleted','filter'");
         try (FlatBloofi flatBloofi = new FlatBloofi(in, numberOfBits, BaseTable.READ_ONLY)) {
 
             if (cmd.hasOption("i")) {
@@ -136,6 +151,12 @@ public final class FlatBloofi implements AutoCloseable {
         }
     }
 
+    /**
+     * Prints a CSV entry for the utility code.
+     * @param entry the entry to print.
+     * @param numberOfBits the number of bits in the filter.
+     * @param out the PrintStream to write to.
+     */
     private static void printEntry(Entry entry, int numberOfBits, PrintStream out) {
         BitMapProducer producer = BitMapProducer.fromIndexProducer(entry.getFilter(), numberOfBits);
 
@@ -148,10 +169,23 @@ public final class FlatBloofi implements AutoCloseable {
 
     }
 
+    /**
+     * Constructor. Opens FlatBloofi in Read/Write mode.
+     * @param dir the directory where the FlatBloofi files should be stored.
+     * @param numberOfBits the number of bits in the Bloom filters.
+     * @throws IOException on IO error.
+     */
     public FlatBloofi(File dir, int numberOfBits) throws IOException {
         this(dir, numberOfBits, BaseTable.READ_WRITE);
     }
 
+    /**
+     * Constructor.
+     * @param dir the directory where the FlatBloofi files should be stored.
+     * @param numberOfBits the number of bits in the Bloom filters.
+     * @param readOnly If {@code true}, FlatBloofi is opened in Read only mode.
+     * @throws IOException on IO error.
+     */
     public FlatBloofi(File dir, int numberOfBits, boolean readOnly) throws IOException {
         this.numberOfBits = numberOfBits;
         buffer = new BloomTable(numberOfBits, new File(dir, "BloomTable"), readOnly);
@@ -163,6 +197,12 @@ public final class FlatBloofi implements AutoCloseable {
         }
     }
 
+    /**
+     * Executes a function using the Busy table executor.
+     * @param fn the Func to execute.
+     * @return
+     * @see BaseTable.Func
+     */
     public Future<?> exec(Func fn) {
         return busy.exec(fn);
     }
@@ -179,10 +219,10 @@ public final class FlatBloofi implements AutoCloseable {
     }
 
     /**
-     * Adds the bloom filter to the bloofi
+     * Adds the bloom filter to the FlatBloofi.
      * @param bloomFilter the Bloom filter to add.
-     * @return the bloom filter index
-     * @throws IOException
+     * @return the Bloom filter index
+     * @throws IOException on IO Error
      */
     public int add(ByteBuffer bloomFilter) throws IOException {
 
@@ -213,10 +253,23 @@ public final class FlatBloofi implements AutoCloseable {
 
     }
 
+    /**
+     * Updates a Bloom filter.
+     * @param idx the Bloom filter index.
+     * @param bloomFilter The new Bloom filter value.
+     * @throws IOException on IO Error.
+     */
     public void update(int idx, ByteBuffer bloomFilter) throws IOException {
         buffer.setBloomAt(idx, bloomFilter.asLongBuffer());
     }
 
+    /**
+     * Adjusts a Bloom filter buffer to ensure that it is long enough to properly fit into a LongBuffer.
+     * If the filter does not end on a Long boundary zero values bytes are added as appropriate.
+     * @param bloomFilter the Bloom filter to adjust.
+     * @return A properly sized Bloom filter
+     * @throws IllegalArgumentException if the filter is too long.
+     */
     private LongBuffer adjustBuffer(ByteBuffer bloomFilter) {
         if (bloomFilter.remaining() == BitMap.numberOfBitMaps(numberOfBits) * Long.BYTES) {
             return bloomFilter.asLongBuffer().asReadOnlyBuffer();
@@ -232,42 +285,92 @@ public final class FlatBloofi implements AutoCloseable {
         return ByteBuffer.wrap(buff).asLongBuffer().asReadOnlyBuffer();
     }
 
+    /**
+     * Searches for matching Bloom filters.
+     * @param result An IntConsumer that accepts the Bloom filter indexes.
+     * @param bloomFilter The Bloom filter to search for.
+     * @throws IOException on IO Error.
+     */
     public void search(IntConsumer result, ByteBuffer bloomFilter) throws IOException {
         buffer.search(result, adjustBuffer(bloomFilter), busy);
     }
 
+    /**
+     * Deletes a bloom Bloom filter.
+     * @param bloomFilter The Bloom filter to delete.
+     * @throws IOException on IO Error.
+     */
     public void delete(int idx) throws IOException {
         busy.clear(idx);
     }
 
+    /**
+     * Counts the number of active Bloom filters.
+     * @return the number of active Bloom filters.
+     * @throws IOException on IO Error.
+     */
     public int count() throws IOException {
         return busy.cardinality();
     }
 
+    /**
+     * Gets the highest active index.
+     * @return the highest used index.
+     * @throws IOException on IO Error.
+     */
     public int getMaxIndex() throws IOException {
         return busy.getMaxIndex();
     }
 
+
+    /**
+     * Gets the Entry associated with an index.
+     * @return the highest used index.
+     * @throws IOException on IO Error
+     * @see Entry
+     */
     public Entry getEntry(int idx) {
         return new Entry(idx);
     }
 
+    /**
+     * Drops the FlatBloofi index.
+     * All data are deleted.
+     */
     public void drop() {
         buffer.drop();
         busy.drop();
     }
 
+    /**
+     * An entry in a FlatBloofi.
+     */
     public class Entry {
+        /**
+         * The index for the entry.
+         */
         private int idx;
 
+        /**
+         * Constructor.
+         * @param idx the index for the entry.
+         */
         private Entry(int idx) {
             this.idx = idx;
         }
 
+        /**
+         * Gets the index for this entry.
+         * @return the index for the entry
+         */
         public int getIndex() {
             return idx;
         }
 
+        /**
+         * Determine if the entry is deleted.
+         * @return {@code true} if the entry is deleted, {@code false} otherwise.
+         */
         public boolean isDeleted() {
             try {
                 return busy.retryOnTimeout(() -> {
@@ -279,6 +382,10 @@ public final class FlatBloofi implements AutoCloseable {
             }
         }
 
+        /**
+         * Gets the filter associated with the entry.
+         * @return The IndexProducer for the Bloom filter data.
+         */
         public IndexProducer getFilter() {
             return buffer.getBloomAt(idx);
         }

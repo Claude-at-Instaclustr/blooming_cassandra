@@ -7,7 +7,7 @@ import java.util.function.Predicate;
  *
  * @param <T> The class being tested
  */
-public class CountingFilter<T> implements Predicate<T> {
+public class CountingPredicate<T> implements Predicate<T> {
 
     /**
      * the counter.

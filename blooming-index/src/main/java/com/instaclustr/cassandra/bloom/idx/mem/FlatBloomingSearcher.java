@@ -44,7 +44,7 @@ import com.instaclustr.iterator.util.ExtendedIterator;
 import com.instaclustr.iterator.util.WrappedIterator;
 
 /**
- * Handles searching the index for mathing filters.
+ * Handles searching the index for matching filters.
  */
 public class FlatBloomingSearcher implements Searcher {
     private static final Logger logger = LoggerFactory.getLogger(FlatBloomingSearcher.class);
@@ -72,14 +72,15 @@ public class FlatBloomingSearcher implements Searcher {
      */
     final Function<ByteBuffer, DecoratedKey> buffer2Key;
 
+    /**
+     * The Serde to use to read/write index data.
+     */
     final FlatBloomingIndexSerde serde;
 
     /**
      * Constructor.
      *
-     * @param flatBloofi The flat bloofi implementaton.
-     * @param idxTable the idx -> key map
-     * @param keyTable the key data.
+     * @param serde The serde to use.
      * @param indexedColumn the indexed column in the base table.
      * @param baseCfs the base table.
      * @param command The read command being executed.
@@ -178,6 +179,8 @@ public class FlatBloomingSearcher implements Searcher {
 
     /**
      * Create an UnfilteredPartitionIterator from an UnfilteredRowIterator.
+     *
+     * This operates by simply wrapping the RowIterator with an UnfilteredPartitionIterator implementation.
      *
      * @param theRowIterator the unfilteredRowIterator to use.
      * @return an UnfilteredPartitionIterator that will return the rows from the UnfilteredRowIterator.

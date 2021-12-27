@@ -118,32 +118,14 @@ import com.instaclustr.iterator.util.WrappedIterator;
  * location is "US".</li>
  * </ol>
  *
- * <h2>Options</h2>
- *
- * <p>The following options may be specified.  If one is specified all should be specified.  If all
- * are specified they are used in the calculation to determine how many rows this index is applied to.
- * If they are not specified the index is assumed to apply to all rows in the base table.</p>
+ * <h2>Configuration entries</h2>
  *
  * <dl>
  * <dt>numberOfBits</dt>
  * <dd>
- * The maximum number of bits in a filter.  Often called {@code m} when describing Bloom filters.
+ * (Required.) The maximum number of bits in a filter.  Often called {@code m} when describing Bloom filters.
  * </dd>
- * <dt>numberOfFunctions</dt>
- * <dd>
- * The number of hash functions applied to an item as it is added to the Bloom filter.  Often
- * called {@code k} when describing Bloom filters.
- * </dd>
- * <dt>numberOfItems</dt>
- * <dd>
- * The average number of items in each Bloom filter added to the index.  Often
- * called {@code n} when describing Bloom filters.
- * </dd>
- * <dt>usePrimaryFilter</dt>
- * <dd>
- * If {@code true} then when retrieving baseTable keys use a Bloom filter to filter out non-matching keys.  This trades smaller
- * memory requirement for slower speed.
- * </dd>
+
  * </dl>
  *
  */
@@ -186,12 +168,6 @@ public class FlatBloomingIndex implements Index {
                     + "counter column, partition key, primary key column, or static column");
         }
 
-        // final String dataDir = indexDef.options.get("dataDir");
-        // if (dataDir == null || dataDir.length() == 0) {
-        // throw new IllegalArgumentException(String.format("dataDir must be
-        // specified"));
-        // }
-        // File dir = new File(dataDir);
         File dir = baseCfs.getDirectories().getCFDirectories().get(0).getParentFile();
         dir = new File(dir, indexDef.name + "_FlatBloofi");
         dir.mkdirs();
@@ -357,8 +333,6 @@ public class FlatBloomingIndex implements Index {
     @Override
     public BiFunction<PartitionIterator, ReadCommand, PartitionIterator> postProcessorFor(ReadCommand command) {
         logger.debug("postProcessorFor");
-        //return (partitionIterator, readCommand) -> partitionIterator;
-
         /*
          * this looks a bit messy but we are building a partition iterators that only
          * return unique rowKey, and row clustering combinations. This is the same
