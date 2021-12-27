@@ -147,6 +147,12 @@ public class BulkExecutor {
                 @Override
                 public void run() {
                     synchronized (this) {
+                        try {
+                            Thread.sleep( 1000 );
+                        } catch (InterruptedException e) {
+                            // TODO Auto-generated catch block
+                            e.printStackTrace();
+                        } // sleep to force delay so remote can catch up
                         if (map.isEmpty()) {
                             notify();
                         } else {
@@ -172,6 +178,34 @@ public class BulkExecutor {
         executor.shutdown();
     }
 
+    class Requeue implements Runnable {
+        private final ExecRunner runner;
+
+        Requeue( ExecRunner execRunner ) {
+            this.runner = execRunner;
+        }
+
+        @Override
+        public void run() {
+            try {
+                updatePermits.acquire();
+                Thread.sleep( 1000 ); // sleep to force delay so remote can catch up
+
+                ResultSetFuture rsf = session.executeAsync(runner.getStatement());
+                /*
+                 * the map keeps a reference to the ResultSetFuture so we can track when all
+                 * futures have executed
+                 */
+                ExecRunner newRunner = runner.duplicate();
+                map.put(newRunner, rsf);
+                // the ResultSetFuture will execute the runner on the executor.
+                rsf.addListener(newRunner, executor);
+            } catch (InterruptedException e) {
+                logger.error( "Error waiting for permit", e );
+            }
+        }
+    }
+
     class ExecRunner implements Runnable {
         private final String stmt;
         private final Consumer<ResultSet> func;
@@ -181,11 +215,20 @@ public class BulkExecutor {
             func = consumer;
         }
 
+        String getStatement() {
+            return stmt;
+        }
+
+        ExecRunner duplicate() {
+            return new ExecRunner( stmt, func );
+        }
+
         private void processResultSet( ResultSet rs) {
             if (func != null) {
                 func.accept(rs);
             }
         }
+
         @Override
         public void run() {
             ResultSetFuture rsf = map.get(this);
@@ -197,9 +240,9 @@ public class BulkExecutor {
                 if (e.getCause() != null) {
                     if (e.getCause() instanceof QueryConsistencyException ||
                             e.getCause() instanceof ConnectionException) {
-                        logger.warn( "Write failure on {}", stmt);
+                        logger.info( "Write failure on {}", stmt);
                         try {
-                            processResultSet( session.execute(stmt) );
+                            executor.submit( new Requeue( this ));
                         } catch (Exception e1) {
                             logger.error( "Exec runner failure", e );
                         }

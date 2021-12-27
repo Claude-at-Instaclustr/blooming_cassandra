@@ -51,7 +51,6 @@
 		<dependency>
 			<groupId>commons-codec</groupId>
 			<artifactId>commons-codec</artifactId>
-			<scope>test</scope>
 		</dependency>
 
 		<dependency>
@@ -84,9 +83,16 @@
 		<dependency>
 			<groupId>commons-io</groupId>
 			<artifactId>commons-io</artifactId>
-			<scope>test</scope>
 		</dependency>
-		
+
+		<dependency>
+			<groupId>org.xenei</groupId>
+			<artifactId>span</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>org.xenei</groupId>
+			<artifactId>spanbuffer</artifactId>
+		</dependency>
 	</dependencies>
 	<build>
 		<plugins>
@@ -163,6 +169,34 @@
 							<groupId>org.apache.commons</groupId>
 							<artifactId>commons-collections4</artifactId>
 							<!-- <version>${commons-collections4-version}</version> -->
+							<type>jar</type>
+							<overWrite>true</overWrite>
+							<outputDirectory>${project.build.directory}/libs</outputDirectory>
+						</artifactItem>
+						<artifactItem>
+							<groupId>org.xenei</groupId>
+							<artifactId>spanbuffer</artifactId>
+							<type>jar</type>
+							<overWrite>true</overWrite>
+							<outputDirectory>${project.build.directory}/libs</outputDirectory>
+						</artifactItem>
+						<artifactItem>
+							<groupId>org.xenei</groupId>
+							<artifactId>span</artifactId>
+							<type>jar</type>
+							<overWrite>true</overWrite>
+							<outputDirectory>${project.build.directory}/libs</outputDirectory>
+						</artifactItem>
+						<artifactItem>
+							<groupId>commons-io</groupId>
+							<artifactId>commons-io</artifactId>
+							<type>jar</type>
+							<overWrite>true</overWrite>
+							<outputDirectory>${project.build.directory}/libs</outputDirectory>
+						</artifactItem>
+						<artifactItem>
+							<groupId>commons-codec</groupId>
+							<artifactId>commons-codec</artifactId>
 							<type>jar</type>
 							<overWrite>true</overWrite>
 							<outputDirectory>${project.build.directory}/libs</outputDirectory>

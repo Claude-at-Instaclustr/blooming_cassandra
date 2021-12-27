@@ -23,17 +23,23 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
+import java.util.ArrayList;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.concurrent.Future;
 import java.util.function.BiFunction;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
 
 import org.apache.cassandra.cql3.Operator;
 import org.apache.cassandra.cql3.statements.schema.IndexTarget;
+import org.apache.cassandra.db.Clustering;
+import org.apache.cassandra.db.ClusteringPrefix;
 import org.apache.cassandra.db.ColumnFamilyStore;
 import org.apache.cassandra.db.DecoratedKey;
 import org.apache.cassandra.db.ReadCommand;
@@ -48,6 +54,8 @@ import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.db.partitions.PartitionIterator;
 import org.apache.cassandra.db.partitions.PartitionUpdate;
 import org.apache.cassandra.db.rows.Cell;
+import org.apache.cassandra.db.rows.Row;
+import org.apache.cassandra.db.rows.RowIterator;
 import org.apache.cassandra.exceptions.InvalidRequestException;
 import org.apache.cassandra.index.Index;
 import org.apache.cassandra.index.IndexRegistry;
@@ -59,13 +67,17 @@ import org.apache.cassandra.io.sstable.ReducingKeyIterator;
 import org.apache.cassandra.io.sstable.format.SSTableReader;
 import org.apache.cassandra.schema.ColumnMetadata;
 import org.apache.cassandra.schema.IndexMetadata;
+import org.apache.cassandra.schema.TableMetadata;
 import org.apache.cassandra.utils.FBUtilities;
 import org.apache.cassandra.utils.Pair;
 import org.apache.cassandra.utils.concurrent.Refs;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.xenei.spanbuffer.Factory;
+import org.xenei.spanbuffer.SpanBuffer;
 
 import com.google.common.collect.ImmutableSet;
+import com.instaclustr.iterator.util.ExtendedIterator;
 import com.instaclustr.iterator.util.WrappedIterator;
 
 /**
@@ -345,8 +357,114 @@ public class FlatBloomingIndex implements Index {
     @Override
     public BiFunction<PartitionIterator, ReadCommand, PartitionIterator> postProcessorFor(ReadCommand command) {
         logger.debug("postProcessorFor");
-        return (partitionIterator, readCommand) -> partitionIterator;
+        //return (partitionIterator, readCommand) -> partitionIterator;
+
+        /*
+         * this looks a bit messy but we are building a partition iterators that only
+         * return unique rowKey, and row clustering combinations. This is the same
+         * combination that is used by BloomingIndexSerde to create clustering for the
+         * internal tables.
+         */
+        return new BiFunction<PartitionIterator, ReadCommand, PartitionIterator>() {
+            Set<SpanBuffer> seen = new HashSet<SpanBuffer>();
+
+            @Override
+            public PartitionIterator apply(PartitionIterator t, ReadCommand u) {
+                return new PartitionIterator() {
+                    private PartitionIterator wrappedPI = t;
+
+
+
+                    @Override
+                    public void close() {
+                        wrappedPI.close();
+                    }
+
+                    @Override
+                    public boolean hasNext() {
+                        return wrappedPI.hasNext();
+                    }
+
+                    @Override
+                    public RowIterator next() {
+                        return new RowIterator() {
+                            private RowIterator wrappedRI = wrappedPI.next();
+
+                            SpanBuffer seenEntry( Row row ) {
+                                List<SpanBuffer> lst = new ArrayList<>();
+                                lst.add( Factory.wrap( wrappedRI.partitionKey().getKey()));
+                                for (ByteBuffer bb : row.clustering().getBufferArray()) {
+                                    lst.add( Factory.wrap( bb ));
+                                }
+                                return Factory.merge( lst.iterator() );
+                            }
+
+                            private ExtendedIterator<Row> ext = WrappedIterator.create(wrappedRI).filterKeep(row -> {
+
+                                return seen.add(seenEntry( row ));
+                            });
+
+                            @Override
+                            public RegularAndStaticColumns columns() {
+                                return wrappedRI.columns();
+                            }
+
+                            @Override
+                            public void forEachRemaining(Consumer<? super Row> arg0) {
+                                wrappedRI.forEachRemaining(arg0);
+                            }
+
+                            @Override
+                            public TableMetadata metadata() {
+                                return wrappedRI.metadata();
+                            }
+
+                            @Override
+                            public boolean isReverseOrder() {
+                                return wrappedRI.isReverseOrder();
+                            }
+
+                            @Override
+                            public boolean isEmpty() {
+                                return wrappedRI.isEmpty();
+                            }
+
+                            @Override
+                            public DecoratedKey partitionKey() {
+                                return wrappedRI.partitionKey();
+                            }
+
+                            @Override
+                            public void remove() {
+                                wrappedRI.remove();
+                            }
+
+                            @Override
+                            public Row staticRow() {
+                                return wrappedRI.staticRow();
+                            }
+
+                            @Override
+                            public void close() {
+                                wrappedRI.close();
+                            }
+
+                            @Override
+                            public boolean hasNext() {
+                                return ext.hasNext();
+                            }
+
+                            @Override
+                            public Row next() {
+                                return ext.next();
+                            }
+                        };
+                    }
+                };
+            }
+        };
     }
+
 
     @Override
     public RowFilter getPostIndexQueryFilter(RowFilter filter) {

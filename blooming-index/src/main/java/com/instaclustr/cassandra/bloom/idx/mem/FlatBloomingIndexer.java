@@ -135,7 +135,7 @@ public class FlatBloomingIndexer implements Indexer {
         ByteBuffer newCell = getFilter(newRowData);
 
         if (oldCell != null && newCell != null) {
-            if (serde.update(key, newRowData, nowInSec)) {
+            if (serde.update(key, newRowData.clustering(), nowInSec, newCell)) {
                 return;
             }
         }

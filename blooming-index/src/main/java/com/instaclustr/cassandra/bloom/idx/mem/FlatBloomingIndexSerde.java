@@ -297,12 +297,12 @@ public class FlatBloomingIndexSerde {
      * @param deletedAt the time when the row was deleted
      * @param ctx the write context to write with.
      */
-    public boolean update(DecoratedKey rowKey, Row row, int nowInSec) {
+    public boolean update(DecoratedKey rowKey, Clustering<?> clustering, int nowInSec, ByteBuffer bloomFilter) {
         logger.debug("Updating {}", rowKey);
-        int idx = read(nowInSec, rowKey, row.clustering());
+        int idx = read(nowInSec, rowKey, clustering);
         if (idx != BufferTable.UNSET) {
             try {
-                flatBloofi.update(idx, row.getCell(idxColumn).buffer());
+                flatBloofi.update(idx, bloomFilter);
                 return true;
             } catch (IOException e) {
                 logger.warn(String.format("Error attempting to update %s (%s}", idx, rowKey), e);
