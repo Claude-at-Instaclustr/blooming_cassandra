@@ -44,7 +44,7 @@ import org.slf4j.LoggerFactory;
 /**
  * Base table for random access file access.
  *
- * <p>The base table aligns data in Blocks as defined  by the blockSize parameter.
+ * <p>The base table aligns data in Blocks as defined by the blockSize parameter.
  * The table uses blocks to perform locking operations for updates.</p>
  *
  * <p>The base table also allows byte oriented operations.  Extending the table by
@@ -57,17 +57,49 @@ import org.slf4j.LoggerFactory;
  *
  */
 public class BaseTable implements AutoCloseable {
+    /**
+     * Convenience static to specify Read only access.
+     */
     public final static boolean READ_ONLY = true;
+    /**
+     * Convenience static to specify Read/Write only access.
+     */
     public final static boolean READ_WRITE = false;
+    /**
+     * The file this Base table is operating on.
+     */
     private final File file;
+    /**
+     * The random access file reading the File.
+     */
     private final RandomAccessFile raFile;
+    /**
+     * The size of the blocks in the file.  Blocks are used to for locking operations.
+     */
     private final int blockSize;
+    /**
+     * The soze of blocks during an extension.  If not explicitly specified this is the same as the blockSize.
+     */
     private int extensionBlockSize;
+    /**
+     * The recently used locks.
+     */
     private final Map<Integer, ReentrantLock> blockLocks = new ConcurrentHashMap<Integer, ReentrantLock>();
+    /**
+     * The table executor to perform clean up tasks and other table based operations.
+     */
     protected final ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor();
+    /**
+     * A list of Func to call when an extension to the file is performed.
+     */
     private final List<Func> extendNotify = new CopyOnWriteArrayList<Func>();
+    /**
+     * True if this table is read only.
+     */
     private final boolean readOnly;
-
+    /**
+     * A runnable to clean up the old block locks.
+     */
     protected final Runnable blockLogsCleanup = new Runnable() {
         @Override
         public void run() {
@@ -82,7 +114,9 @@ public class BaseTable implements AutoCloseable {
             });
         }
     };
-
+    /**
+     * The byte buffer associated with this table.
+     */
     private ByteBuffer buffer;
 
     /**
@@ -104,10 +138,19 @@ public class BaseTable implements AutoCloseable {
         this.buffer = fileChannel.map(readOnly ? MapMode.READ_ONLY : MapMode.READ_WRITE, 0, size);
     }
 
+    /**
+     * Execute a func using the executor associated with this table.
+     * @param fn the Func to execute.
+     * @return the Future for the execution.
+     */
     public Future<?> exec(Func fn) {
         return executor.submit(fn.asCallable());
     }
 
+    /**
+     * Execute a func and requeue it if it failed deu to an OutputTimeoutException.
+     * @param fn the Func to execute.
+     */
     public void requeue(Func fn) {
         executor.submit(() -> {
             try {
@@ -120,10 +163,19 @@ public class BaseTable implements AutoCloseable {
         });
     }
 
+    /**
+     * set the extension block size.  This is the number of bytes for each block during an extension.  If not set it
+     * defaults to the blockSize.
+     * @param extensionBlockSize The extension block size.
+     */
     protected void setExtensionBlockSize(int extensionBlockSize) {
         this.extensionBlockSize = extensionBlockSize;
     }
 
+    /**
+     * Register a Func for notification when an extension occurs.
+     * @param fn the Function to call when an extension occurs.
+     */
     protected void registerExtendNotification(Func fn) {
         extendNotify.add(fn);
     }
@@ -166,10 +218,21 @@ public class BaseTable implements AutoCloseable {
         }
     }
 
+    /**
+     * Executes a Func and retries it if it fails due to an OutputTimeoutException.
+     * @param fn the function to execute.
+     * @throws Exception for non OutputTimeoutException errors.
+     */
     public void retryOnTimeout(Func fn) throws Exception {
         retryOnTimeout(fn.asCallable());
     }
 
+    /**
+     * Executes a Callable and retries it if it fails due to an OutputTimeoutException.
+     * @param <T> the return type.
+     * @param fn the Callable to execute.
+     * @throws Exception for non OutputTimeoutException errors.
+     */
     public <T> T retryOnTimeout(Callable<T> fn) throws Exception {
         while (true) {
             try {
@@ -227,6 +290,9 @@ public class BaseTable implements AutoCloseable {
         return raFile.length();
     }
 
+    /**
+     * Drops the index.  All data are deleted.
+     */
     public void drop() {
         closeQuietly();
         this.file.delete();
@@ -253,10 +319,9 @@ public class BaseTable implements AutoCloseable {
      * @param length the number of consecutive bytes the action may modify.
      * @param retryCount the number of times to retry the lock before failing.
      * @return the result of the action.
-     * @throws Exception
-     * @throws SyncFailedException if the execution throws an excepton.
-     * @throws TimeoutException if the lock could not be established.
-     * @see #sync(Func, int, int, int)
+     * @throws IOException on IO Error
+     * @throws SyncFailedException if the execution throws a non IOExcepton.
+     * @throws OutputTimeoutException if the lock could not be established.
      */
     protected <T> T sync(Callable<T> action, int startByte, int length, int retryCount) throws IOException {
         try (RangeLock lock = getLock(startByte, length, retryCount)) {
@@ -278,24 +343,13 @@ public class BaseTable implements AutoCloseable {
      * @param startByte the starting byte that the action may modify
      * @param length the number of consecutive bytes the action may modify.
      * @param retryCount the number of times to retry the lock before failing.
-     * @throws Exception
-     * @throws SyncFailedException if the execution throws an excepton.
-     * @throws TimeoutException if the lock could not be established.
+     * @throws IOException on IO Error
+     * @throws SyncFailedException if the execution throws a non IOExcepton.
+     * @throws OutputTimeoutException if the lock could not be established.
      * @see #sync(Callable, int, int, int)
      */
     protected void sync(Func action, int startByte, int length, int retryCount) throws IOException {
         sync(action.asCallable(), startByte, length, retryCount);
-    }
-
-    /**
-     * Check that the parameter is >= zero.
-     * @param value the value to check
-     * @param name the name of the parameter
-     */
-    protected void checkGEZero(long value, String name) {
-        if (value < 0) {
-            throw new IllegalArgumentException(String.format("%s (%s) may not be less than zero (0)", name, value));
-        }
     }
 
     /**
@@ -317,7 +371,18 @@ public class BaseTable implements AutoCloseable {
     }
 
     /**
-     * Check that the parameter is > zero.
+     * Check that the parameter is greater than or equal to zero.
+     * @param value the value to check
+     * @param name the name of the parameter
+     */
+    protected void checkGEZero(long value, String name) {
+        if (value < 0) {
+            throw new IllegalArgumentException(String.format("%s (%s) may not be less than zero (0)", name, value));
+        }
+    }
+
+    /**
+     * Check that the parameter is greater than zero.
      * @param value the value to check
      * @param name the name of the parameter
      */
@@ -338,11 +403,10 @@ public class BaseTable implements AutoCloseable {
      * @param retryCount the number of times to retry the lock before failing.  Lock will be attempted
      * at least once.
      * @return the RangeLock
-     * @throws SyncFailedException if the
      * @throws OutputTimeoutException if the lock could not be established.
-     * @throws IllegalArgumentException If {startByte < 0}.
-     * @throws IllegalArgumentException If {length <= 0}.
-     * @throws IllegalArgumentException If {retryCount < 0}.
+     * @throws IllegalArgumentException If {@code startByte < 0}.
+     * @throws IllegalArgumentException If {@code length <= 0}.
+     * @throws IllegalArgumentException If {@code retryCount < 0}.
      */
     protected final RangeLock getLock(int startByte, int length, int retryCount) throws OutputTimeoutException {
         checkGEZero(startByte, "startByte");
@@ -360,10 +424,20 @@ public class BaseTable implements AutoCloseable {
         throw new OutputTimeoutException("Unable to lock " + this);
     }
 
+    /**
+     * Get the block number that contains the byte count.
+     * @param byteCount the byte count to locate.
+     * @return the Block number containing the byte count.
+     */
     public long blockNumber(long byteCount) {
         return byteCount / blockSize;
     }
 
+    /**
+     * Get the block number that contains the byte count.
+     * @param byteCount the byte count to locate.
+     * @return the Block number containing the byte count.
+     */
     public int blockNumber(int byteCount) {
         return byteCount / blockSize;
     }
@@ -371,7 +445,7 @@ public class BaseTable implements AutoCloseable {
     /**
      * Calculates and locks blocks.
      * @param start the starting byte
-     * @param stop the endint byte
+     * @param stop the ending byte
      * @return a RangeLock containing the locks for all the blocks or
      *  none of the locks.
      */
@@ -434,9 +508,9 @@ public class BaseTable implements AutoCloseable {
     }
 
     /**
-     * Crates a new writable ByteBuffer that is 1 blocksize longer than the current file
+     * Crates a new writable ByteBuffer that is 1 block longer than the current file
      * size.
-     * @return first byte of the new block
+     * @return offset of the first byte of the new block
      * @throws IOException on IOError
      */
     protected final int extendBuffer() throws IOException {
@@ -444,12 +518,12 @@ public class BaseTable implements AutoCloseable {
     }
 
     /**
-     * Crates a new writable ByteBuffer that is 1 block size longer than the current file
-     * size.  if the buffer is not alligned on a block boundary it will continue to be
+     * Creates a new writable ByteBuffer that is blocks longer than the current file
+     * size.  if the buffer is not aligned on a block boundary it will continue to be
      * unaligned by the same number of bytes after this call.
      *
      * @param blocks the number of blocks to extend the buffer by.
-     * @return first byte of the new block.
+     * @return offset of the first byte of the new block.
      * @throws IOException on IOError
      * @throws IllegalArgumentException If {@code blocks < 0}.
      */
@@ -468,8 +542,8 @@ public class BaseTable implements AutoCloseable {
     /**
      * Crates a new writable ByteBuffer that is {@code bytes} longer than the current file
      * size.
-     * @param blocks the number of blocks to extend the buffer by.
-     * @return first byte of the new block.
+     * @param bytes the number of bytes to extend the buffer by.
+     * @return the offset of the first byte new byte in the file.
      * @throws IOException on IOError
      * @throws IllegalArgumentException If {@code bytes < 0}.
      */
@@ -543,10 +617,10 @@ public class BaseTable implements AutoCloseable {
     /**
      * Closes an AutoCloseable instance and ignores any exceptions.
      * Any exceptions are logged as errors.
-     * @param c the instance to close.
+     * @param closable the instance to close.
      */
-    public static void closeQuietly(AutoCloseable c) {
-        execQuietly(() -> c.close(), BaseTable.class);
+    public static void closeQuietly(AutoCloseable closable) {
+        execQuietly(() -> closable.close(), BaseTable.class);
     }
 
     /**
@@ -587,23 +661,10 @@ public class BaseTable implements AutoCloseable {
 
     /**
      * get the logger for the class that is actually executing.
-     * @return
+     * @return the current logger.
      */
     private Logger getLogger() {
         return LoggerFactory.getLogger(this.getClass());
-    }
-
-    /**
-     * Execute the stack of functions in order.
-     * Each @Code Callable} is popped from the stack and quietly exuected.
-     * @param stack the list of Func to execute.
-     * @see #execQuietly(Func)
-     * @see Func
-     */
-    protected void execQuietly(Stack<Func> stack) {
-        while (!stack.empty()) {
-            execQuietly(stack.pop());
-        }
     }
 
     /**
@@ -652,7 +713,7 @@ public class BaseTable implements AutoCloseable {
          * If the lock can not be established all of the locks in the collection are
          * released.
          * @param lock the lock to add
-         * @return true if the lock can be established within 500 milliseconds.
+         * @return {@code true} if the lock can be established within 500 milliseconds, {@code false} it it can not.
          */
         boolean add(ReentrantLock lock) {
             try {
@@ -670,7 +731,7 @@ public class BaseTable implements AutoCloseable {
 
         /**
          * Returns {@code true} if the RangeLock is holding any locks.
-         * @return true if this holds any locks.
+         * @return {@code true} if this holds any locks, {@code false} otherwise.
          */
         public boolean hasLock() {
             return !locks.isEmpty();
@@ -685,7 +746,7 @@ public class BaseTable implements AutoCloseable {
         }
 
         /**
-         * Release all the locks held by this thread.
+         * Releasees all the locks held by this thread.
          */
         public void release() {
             for (ReentrantLock lock : locks) {

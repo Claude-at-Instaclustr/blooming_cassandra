@@ -25,28 +25,64 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Table that maps the external index to the internal KeytableIndex
+ * Table that maps the external index to the internal Buffer Table Idx
  *
  */
 public class IdxMap extends BaseTable implements AutoCloseable {
 
     private static final Logger LOG = LoggerFactory.getLogger(IdxMap.class);
 
+    /**
+     * The size of the Blocks
+     */
     public static final int BLOCK_BYTES = 1 + Integer.BYTES;
+    /**
+     * The initialized flag.
+     */
     private static final byte INITIALIZED_FLAG = (byte) 0x01;
 
+    /**
+     * An entry in the IdxMap table.
+     */
     interface Entry {
+        /**
+         * Gets the block the entry is associated with.
+         * @return the block the entry is associated with.
+         */
         public int getBlock();
 
+        /**
+         * Gets the inisialized status.
+         * @return {@code true} if the entry is initialized
+         */
         public boolean isInitialized();
 
+        /**
+         * get the index of the BufferTableIdx.
+         * @return the index of the buffer Table idx.
+         */
         public int getKeyIdx();
     }
 
+    /**
+     * An Entry implementation that maps to the file.
+     */
     class MapEntry implements Entry {
+        /**
+         * The buffer we are reading/writeing.
+         */
         protected ByteBuffer buffer;
+        /**
+         * The block in the file that we are manipulating.
+         */
         private int block;
 
+        /**
+         * Constructor.
+         *
+         * @param buffer the Buffer to read/write.
+         * @param idx the block inn the file.
+         */
         MapEntry(ByteBuffer buffer, int idx) {
             this.buffer = buffer;
             this.block = idx;
@@ -57,6 +93,11 @@ public class IdxMap extends BaseTable implements AutoCloseable {
             return block;
         }
 
+        /**
+         * Set the Buffer Table idx value.
+         * @param keyIdx the Buffer table idx value.
+         * @throws IOException on IO Error.
+         */
         public void setKeyIdx(int keyIdx) throws IOException {
             final ByteBuffer writeBuffer = getWritableBuffer();
             final int startByte = block * BLOCK_BYTES;
@@ -73,20 +114,47 @@ public class IdxMap extends BaseTable implements AutoCloseable {
             return buffer.getInt((block * BLOCK_BYTES) + 1);
         }
 
+        /**
+         * Get a range lock on this Entry.
+         * @param retryCount the number of times to retry the lock.
+         * @return the RangeLock
+         * @throws OutputTimeoutException if the lock could not be established.
+         */
         public RangeLock lock(int retryCount) throws OutputTimeoutException {
             final int startByte = block * BLOCK_BYTES;
             return getLock(startByte, BLOCK_BYTES, retryCount);
         }
     }
 
+    /**
+     * An Entry implementation to search for deleted entries.
+     */
     public static class SearchEntry implements Entry {
+        /**
+         * The block.  Defaults to Unset.
+         * @see BufferTable.UNSET
+         */
         private int block = BufferTable.UNSET;
+        /**
+         * The flag state we are looking for. Defaults to 0 (zero).
+         */
         private byte flag = 0;
+        /**
+         * The BufferTable Idx value.  Defaults to Unset
+         * @see BufferTable.UNSET
+         */
         private int keyIdx = BufferTable.UNSET;
 
+        /**
+         * Constructor.
+         */
         public SearchEntry() {
         }
 
+        /**
+         * Set the block value
+         * @param block the block to search beyond.
+         */
         public void setBlock(int block) {
             this.block = block;
         }
@@ -96,6 +164,10 @@ public class IdxMap extends BaseTable implements AutoCloseable {
             return this.block;
         }
 
+        /**
+         * The key idx to search for.
+         * @param keyIdx the key idx.
+         */
         public void setKeyIdx(int keyIdx) {
             this.keyIdx = keyIdx;
         }
@@ -110,43 +182,60 @@ public class IdxMap extends BaseTable implements AutoCloseable {
             return (flag & INITIALIZED_FLAG) != INITIALIZED_FLAG;
         }
 
+        /**
+         * Set the initialized flag.
+         * @param state
+         */
         public void setInitialized(boolean state) {
             flag = state ? INITIALIZED_FLAG : 0;
         }
 
     }
 
-    public static void main(String[] args) throws IOException {
-        File f = new File(args[0]);
-        if (!f.exists()) {
-            System.err.println(String.format("%s does not exist", f.getAbsoluteFile()));
-        }
-        System.out.println("'Index','Initialized','reference'");
-        try (IdxMap idx = new IdxMap(f, BaseTable.READ_ONLY)) {
-            int blocks = (int) idx.getFileSize() / idx.getBlockSize();
-            for (int block = 0; block < blocks; block++) {
-                MapEntry entry = idx.get(block);
-                System.out.println(String.format("%s,%s,%s", block, entry.isInitialized(), entry.getKeyIdx()));
-            }
-        }
-    }
-
+    /**
+     * Constructor.
+     * @param bufferFile the File to read/write.
+     * @throws IOException on IO Error.
+     */
     public IdxMap(File bufferFile) throws IOException {
         this(bufferFile, BaseTable.READ_WRITE);
     }
 
+    /**
+     * Constructor.
+     * @param bufferFile the File to read/write.
+     * @param readOnly if {@code true} the table will be read only.
+     * @throws IOException on IO Error.
+     */
     public IdxMap(File bufferFile, boolean readOnly) throws IOException {
         super(bufferFile, BLOCK_BYTES, readOnly);
     }
 
+    /**
+     * Gets the map entry for the index.  Will create the index if it does not exist.
+     * @param idx the index to read.
+     * @return the Map Entry for the index.
+     * @throws IOException on IO Error.
+     */
     public MapEntry get(int idx) throws IOException {
         // ensure we have enough space for the block
-
         ensureBlock(idx + 1);
         ByteBuffer buff = getBuffer();
         return new MapEntry(buff, idx);
     }
 
+    /**
+     * Search for an index.
+     * Conditions under which an entry will be passed to the consumer
+     * <ul>
+     * <li>If the target block matches the entry block.</li>
+     * <li>If the target keyindex matches the target key index.</li>
+     * <li>If the block is UNSET and both the target and index are uninitialized.</li>
+     * </ul>
+     * @param consumer the consumer to accept matching entries.
+     * @param target the Search entry to look for.
+     * @see BufferTable.UNSET
+     */
     public void search(IntConsumer consumer, SearchEntry target) {
         try {
             int blocks = (int) getFileSize() / getBlockSize();

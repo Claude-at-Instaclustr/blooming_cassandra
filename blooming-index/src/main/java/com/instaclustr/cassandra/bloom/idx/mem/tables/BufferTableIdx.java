@@ -25,24 +25,30 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Manages a file that contains the offset of the index into a key file.
+ * Manages a file contains status information for a Buffer table.
  *
  */
 public class BufferTableIdx extends BaseTable implements AutoCloseable {
 
     private static final Logger logger = LoggerFactory.getLogger(BufferTableIdx.class);
-    /*
-     * Structure of the keytable index
-     *
-     * byte flags int offset int len int alloc
-     *
-     */
 
+    /**
+     * Convert a bit position ot a byte map for that position
+     * @param bit the bit position to map.
+     * @return a byte that is a bit mask to extract the position bit.
+     */
     private static byte mkMap(int bit) {
         return (byte) (1 << bit);
     }
 
+    /**
+     * A sorted set of deleted entries to quicky find deleted entries with enough space for a buffer.
+     */
     private ConcurrentSkipListSet<Entry> deletedEntries = new ConcurrentSkipListSet<>();
+
+    /**
+     * The byte buffer we are reading/writeing.
+     */
     private volatile ByteBuffer buffer;
 
     /**
@@ -50,6 +56,9 @@ public class BufferTableIdx extends BaseTable implements AutoCloseable {
      */
     private static byte DELETED_FLG = mkMap(0);
 
+    /**
+     * Flagfor Uninitialized entries.
+     */
     private static byte UNINITIALIZED_FLG = mkMap(1);
     /**
      * Flag for an invalid entry.  Was once an entry but the allocation was
@@ -58,33 +67,66 @@ public class BufferTableIdx extends BaseTable implements AutoCloseable {
     private static byte INVALID_FLG = (byte) (DELETED_FLG | UNINITIALIZED_FLG);
 
     // the first byte is the Flag byte
+    /**
+     * The position in the block of the offset value
+     */
     private static int OFFSET_BYTE = 1;
+    /**
+     * The position in the block of the length value
+     */
     private static int LEN_BYTE = OFFSET_BYTE + Integer.BYTES;
+    /**
+     * The position in the block of the allocation value
+     */
     private static int ALLOC_BYTE = LEN_BYTE + Integer.BYTES;
+    /**
+     * The length of a block.
+     */
     private static int BLOCK_SIZE = ALLOC_BYTE + Integer.BYTES;
 
+    /**
+     * An entry in the Buffer Table Index.
+     */
     public abstract class Entry implements Comparable<Entry> {
 
+        /**
+         * the offset of this entry in the table.
+         */
         private int offset;
 
+        /**
+         * Constructor.
+         * @param offset the offset of the entry in the table.
+         */
         protected Entry(int offset) {
             this.offset = offset;
         }
 
+        /**
+         * Gets the offset of the block in the Buffer Table.
+         * @return the offset of the block in the Buffer table.
+         */
         public final int getBlockOffset() {
             return offset;
         }
 
         /**
-         * Gets the table block for this entry.
-         * @return the table block for this entry.
+         * Gets the block number in the Buffer table for this entry.
+         * @return the block number for this entry.
          */
         public final int getBlock() {
             return getBlockOffset() / BLOCK_SIZE;
         }
 
+        /**
+         * Gets the allocations size of the block in the Buffer Table.
+         * @return the allocation size of the block in the Buffer table.
+         */
         public abstract int getAlloc();
 
+        /**
+         * Compare Entries by allocation and then offset.
+         */
         @Override
         public final int compareTo(Entry arg0) {
             int result = Integer.compare(getAlloc(), arg0.getAlloc());
@@ -112,11 +154,15 @@ public class BufferTableIdx extends BaseTable implements AutoCloseable {
     }
 
     /**
-     * Package private so that other classes in this package can use it.
-     *
+     * An entry in the Buffer Table Idx.
      */
     class IdxEntry extends Entry {
 
+        /**
+         * Constructor.
+         * @param block the block for this entry.
+         * @throws IOException on IO Error.
+         */
         IdxEntry(int block) throws IOException {
             super(block * BLOCK_SIZE);
             if (!checkBlockAlignment(getFileSize(), BLOCK_SIZE)) {
@@ -160,6 +206,12 @@ public class BufferTableIdx extends BaseTable implements AutoCloseable {
             }
         }
 
+        /**
+         * Get a Range lock for this Entry.
+         * @param retryCount the number of retry attempts
+         * @return the RangeBlock.
+         * @throws OutputTimeoutException if lock could not be established.
+         */
         public RangeLock lock(int retryCount) throws OutputTimeoutException {
             return getLock(getBlockOffset(), BLOCK_SIZE, retryCount);
         }
@@ -176,7 +228,7 @@ public class BufferTableIdx extends BaseTable implements AutoCloseable {
 
         /**
          * Checks the deleted flag
-         * @return true if the deleted flag is set.
+         * @return {@code true} if the deleted flag is set.
          */
         public boolean isDeleted() {
             return checkFlag((b) -> (b & DELETED_FLG) == DELETED_FLG);
@@ -193,7 +245,7 @@ public class BufferTableIdx extends BaseTable implements AutoCloseable {
 
         /**
          * Cheks the invalid state.  Entries are invalid if they are deleted and uninitialized.
-         * @return true if the entry is invalid.
+         * @return {@code true} if the entry is invalid.
          */
         public boolean isInvalid() {
             return checkFlag((b) -> (b & INVALID_FLG) == INVALID_FLG);
@@ -212,7 +264,7 @@ public class BufferTableIdx extends BaseTable implements AutoCloseable {
         /**
          * Determines if the entry is available.
          * Entries are available if they are deleted and not invalid.
-         * @return true if the entry is available.
+         * @return {@code true} if the entry is available.
          */
         public boolean isAvailable() {
             return checkFlag((b) -> (b & INVALID_FLG) == DELETED_FLG);
@@ -220,7 +272,7 @@ public class BufferTableIdx extends BaseTable implements AutoCloseable {
 
         /**
          * Sets the initialized flag.
-         * @param state the state to set the initialzed flag to.
+         * @param state the state to set the initialized flag to.
          * @throws IOException on IO Error
          */
         public void setInitialized(boolean state) throws IOException {
@@ -229,7 +281,7 @@ public class BufferTableIdx extends BaseTable implements AutoCloseable {
 
         /**
          * Checks the initialization state of the entry
-         * @return true if the entry is initialized, false otherwise.
+         * @return {@code true} if the entry is initialized, {@code false} otherwise.
          */
         public boolean isInitialized() {
             return !checkFlag((b) -> (b & UNINITIALIZED_FLG) == UNINITIALIZED_FLG);
@@ -271,7 +323,7 @@ public class BufferTableIdx extends BaseTable implements AutoCloseable {
 
         /**
          * Gets the allocated space in the data table for this entry.
-         * @return the allcoated space in the data table for this entry.
+         * @return the allocated space in the data table for this entry.
          */
         @Override
         public int getAlloc() {
@@ -298,10 +350,21 @@ public class BufferTableIdx extends BaseTable implements AutoCloseable {
         }
     }
 
+    /**
+     * An Entry implementaiton used for searching the deleted entries
+     *
+     */
     class SearchEntry extends Entry {
 
+        /**
+         * The minimum allocation to search for.
+         */
         private int alloc;
 
+        /**
+         * Constructor.
+         * @param alloc the minimum allocation size to search for.
+         */
         SearchEntry(int alloc) {
             super(-1);
             this.alloc = alloc;
@@ -313,46 +376,21 @@ public class BufferTableIdx extends BaseTable implements AutoCloseable {
         }
     }
 
-    public static void main(String[] args) throws IOException {
-        File f = new File(args[0]);
-        if (!f.exists()) {
-            System.err.println(String.format("%s does not exist", f.getAbsoluteFile()));
-        }
-
-        long position = f.length();
-        if ((position % BLOCK_SIZE) != 0) {
-            long lower = position - (position % BLOCK_SIZE);
-            long upper = lower + BLOCK_SIZE;
-            System.err.println(String.format("position does not allign with block size %s should be %s or %s.",
-                    position, lower, upper));
-        }
-
-        if ((f.length() % BLOCK_SIZE) != 0) {
-            long expected = f.length() - (f.length() % BLOCK_SIZE);
-            System.err
-            .println(String.format("File has incorrect block size (%s) should be (%s).", f.length(), expected));
-        }
-        System.out.println("'index','offset','available','deleted','initialized','invalid','used','allocated'");
-        try (BufferTableIdx idx = new BufferTableIdx(f, BaseTable.READ_ONLY)) {
-            int blocks = (int) idx.getFileSize() / idx.getBlockSize();
-            for (int block = 0; block < blocks; block++) {
-                IdxEntry entry = idx.get(block);
-                System.out.println(String.format("%s,%s,%s,%s,%s,%s,%s,%s", block, entry.getOffset(),
-                        entry.isAvailable(), entry.isDeleted(), entry.isInitialized(), entry.isInvalid(),
-                        entry.getLen(), entry.getAlloc()));
-            }
-        }
-    }
-
     /**
      * Constructor
-     * @param bufferFile the file to operate on.
+     * @param bufferFile the file to read/write.
      * @throws IOException on IO error.
      */
     public BufferTableIdx(File bufferFile) throws IOException {
         this(bufferFile, BaseTable.READ_WRITE);
     }
 
+    /**
+     * Constructor
+     * @param bufferFile the file to operate on.
+     * @param readOnly i f{@code true} the file will be opened in read only mode, otherwise it will be opened in read/write mode.
+     * @throws IOException on IO error.
+     */
     public BufferTableIdx(File bufferFile, boolean readOnly) throws IOException {
         super(bufferFile, BLOCK_SIZE, readOnly);
         this.buffer = getBuffer();
@@ -360,6 +398,9 @@ public class BufferTableIdx extends BaseTable implements AutoCloseable {
         executor.submit(() -> buildDeletedSet());
     }
 
+    /**
+     * Method to scan the entries locating the deleted entries and placing them into the deletedEntries collection.
+     */
     private void buildDeletedSet() {
         try {
             for (int i = 0; i < getFileSize() / getBlockSize(); i++) {
@@ -398,8 +439,8 @@ public class BufferTableIdx extends BaseTable implements AutoCloseable {
      * Searches for an empty block of specified length.
      * If an empty block is found is is marked as not deleted and not initialized.
      * @param length the minimum length of the block.
-     * @return the IdxEntry that will accept the length or null if none found.
-     * @throws IOException
+     * @return the IdxEntry that will accept the length or {@code null} if none found.
+     * @throws IOException on IO error
      */
     public IdxEntry search(int length) throws IOException {
         if (!deletedEntries.isEmpty()) {

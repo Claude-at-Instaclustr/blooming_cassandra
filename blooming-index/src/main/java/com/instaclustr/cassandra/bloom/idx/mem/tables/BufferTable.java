@@ -34,12 +34,25 @@ import org.slf4j.LoggerFactory;
 import com.instaclustr.cassandra.bloom.idx.mem.tables.BufferTableIdx.IdxEntry;
 import com.instaclustr.cassandra.bloom.idx.mem.tables.IdxMap.MapEntry;
 
+/**
+ * A table that stored blobs of data.
+ *
+ */
 public class BufferTable extends BaseTable {
 
     private static final Logger LOG = LoggerFactory.getLogger(BufferTable.class);
 
+    /**
+     * The value used when an index is unset.
+     */
     public static final int UNSET = -1;
+    /**
+     * The index map table for this buffer table.
+     */
     final IdxMap idxTable;
+    /**
+     * the buffer table index for this buffer table.
+     */
     final BufferTableIdx keyTableIdx;
 
     @Override
@@ -56,6 +69,10 @@ public class BufferTable extends BaseTable {
         super.close();
     }
 
+    /**
+     * The options for the utility function.
+     * @return the Options for the utility.
+     */
     public static Options getOptions() {
         Options options = new Options();
         options.addOption("h", "help", false, "This help");
@@ -69,6 +86,11 @@ public class BufferTable extends BaseTable {
         return options;
     }
 
+    /**
+     * Executes the utility function.
+     * @param args the arguments for the utility functon.
+     * @throws IOException on IO Error.
+     */
     public static void main(String[] args) throws IOException {
         HelpFormatter formatter = new HelpFormatter();
         CommandLineParser parser = new DefaultParser();
@@ -151,10 +173,23 @@ public class BufferTable extends BaseTable {
         }
     }
 
+    /**
+     * Constructor
+     * @param file the file to read/write
+     * @param blockSize the size of the blocks for locking purposes.
+     * @throws IOException on IO error.
+     */
     public BufferTable(File file, int blockSize) throws IOException {
         this(file, blockSize, BaseTable.READ_WRITE);
     }
 
+    /**
+     * Constructor
+     * @param file the file to use
+     * @param blockSize the size of the blocks for locking purposes.
+     * @param readOnly if {@code true} the file will be opend in read only mode, otherwise it will be open in read/write mode.
+     * @throws IOException on IO error.
+     */
     public BufferTable(File file, int blockSize, boolean readOnly) throws IOException {
         super(file, blockSize, readOnly);
         File idxFile = new File(file.getParentFile(), file.getName() + "_idx");
@@ -163,6 +198,13 @@ public class BufferTable extends BaseTable {
         keyTableIdx = new BufferTableIdx(keyIdxFile, readOnly);
     }
 
+    /**
+     * Get the byte buffer for the index. Will be null if the idx is invalid, maps to an unknown entry, or
+     * has been marked as deleted.
+     * @param idx the index to read.
+     * @return the byte Buffer, may be {@code null}
+     * @throws IOException on IO Error.
+     */
     public ByteBuffer get(int idx) throws IOException {
         if (!idxTable.hasBlock(idx)) {
             LOG.warn("Attempted to retrieve unknown record {}.   Block not in index table.", idx);
@@ -204,10 +246,10 @@ public class BufferTable extends BaseTable {
     }
 
     /**
-     * Set an existing index to the buffer data.
-     * @param keyIdxEntry
-     * @param buff
-     * @throws IOException
+     * Assocaites the buffer data with an the existing index.
+     * @param keyIdxEntry the Index entry to associated the data with.
+     * @param buff the data for the buffer.
+     * @throws IOException on IO exception.
      */
     private void set(BufferTableIdx.IdxEntry keyIdxEntry, ByteBuffer buff) throws IOException {
         // Stack<Func> undo = new Stack<Func>();
@@ -223,6 +265,13 @@ public class BufferTable extends BaseTable {
         }
     }
 
+    /**
+     * Creates a new entry for the bufer.
+     * @param idx the index for the buffer.
+     * @param buff the buffer
+     * @return a bufferTableIdx entry.
+     * @throws IOException on IO error.
+     */
     private BufferTableIdx.IdxEntry createNewEntry(int idx, ByteBuffer buff) throws IOException {
 
         BufferTableIdx.IdxEntry keyIdxEntry = null;
@@ -257,6 +306,12 @@ public class BufferTable extends BaseTable {
 
     }
 
+    /**
+     * Associates the bufer with the index.
+     * @param idx the index for the buffer.
+     * @param buff the buffer.
+     * @throws IOException on IO Error.
+     */
     public void set(int idx, ByteBuffer buff) throws IOException {
         IdxMap.MapEntry mapEntry = idxTable.get(idx);
         if (mapEntry.isInitialized()) {
@@ -285,6 +340,11 @@ public class BufferTable extends BaseTable {
         }
     }
 
+    /**
+     * Deletes the indexed buffer.
+     * @param idx the index to delete.
+     * @throws IOException on IO Error
+     */
     public void delete(int idx) throws IOException {
         IdxMap.MapEntry mapEntry = idxTable.get(idx);
         if (mapEntry.isInitialized()) {
@@ -295,6 +355,11 @@ public class BufferTable extends BaseTable {
         }
     }
 
+    /**
+     * Search for matching buffers.
+     * @param consumer the consumer to accept indexes of matching entries.
+     * @param target the search entry to look for.
+     */
     public void search(IntConsumer consumer, IdxMap.SearchEntry target) {
         idxTable.search(consumer, target);
     }

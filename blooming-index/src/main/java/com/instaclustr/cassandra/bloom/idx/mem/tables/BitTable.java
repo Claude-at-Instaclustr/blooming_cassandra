@@ -28,17 +28,39 @@ import org.apache.commons.collections4.bloomfilter.BitMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+/**
+ * A class that implements an arry of bits as a table.
+ * The table block size is the size of a Long value.
+ */
 public class BitTable extends BaseTable implements AutoCloseable {
     private static final Logger logger = LoggerFactory.getLogger(BitTable.class);
 
+    /**
+     * The write buffer.
+     */
     private LongBuffer writeBuffer;
 
+    /**
+     * The lowest deleted  block.  When looking for deleted block the system will scan from this point.
+     */
     private volatile int lowestDeletedBlock = 0;
 
+    /**
+     * Constructor.
+     * @param busyFile The file to read/write.
+     * @throws IOException on IO Error.
+     */
     public BitTable(File busyFile) throws IOException {
         this(busyFile, BaseTable.READ_WRITE);
     }
 
+
+    /**
+     * Constructor.
+     * @param busyFile The file to read/write.
+     * @param readOnly if {@code true} the file will be read only, otherwise it is opend in read/write mode.
+     * @throws IOException on IO Error.
+     */
     public BitTable(File busyFile, boolean readOnly) throws IOException {
         super(busyFile, Long.BYTES, readOnly);
         if (readOnly) {
@@ -52,6 +74,9 @@ public class BitTable extends BaseTable implements AutoCloseable {
         }
     }
 
+    /**
+     * Scan for the lowest deleted  entry.  This scan starts at 0 and locates the first deleted bit.
+     */
     private void scanForLowest() {
         LongBuffer buff = writeBuffer.duplicate();
         long full = ~0L;
@@ -63,6 +88,11 @@ public class BitTable extends BaseTable implements AutoCloseable {
         }
     }
 
+    /**
+     * Get the maximum bit index.
+     * @return the maximum bit index.
+     * @throws IOException on IO Error.
+     */
     public int getMaxIndex() throws IOException {
         return (int) getFileSize() * Byte.SIZE;
     }
@@ -74,17 +104,38 @@ public class BitTable extends BaseTable implements AutoCloseable {
     }
 
     /**
-     * Class to scan the busy table locating all the disabled (unused) indexes.
+     * Class to scan the bit table locating all the disabled (unused) indexes.
      * The Callable implementation enables the bit current bit.  If there is no
      * current bit the next bit is located.
      */
     private class IndexScanner implements Callable<Boolean>, Iterator<Integer> {
+        /**
+         * The highest block to check.
+         */
         private final int maxBlock;
+        /**
+         * The current block
+         */
         private int block;
+        /**
+         * The mask that extracts the byte from the long
+         */
         private long mask;
+        /**
+         * the current long from the file.
+         */
         private long word;
+        /**
+         * The logical negation of the word
+         */
         private long check;
+        /**
+         * the current file long that we are looking at.
+         */
         private int blockIdx;
+        /**
+         * if not {@code null} contains the next available entry in the bit table.
+         */
         private Integer next;
 
         /**
@@ -97,6 +148,10 @@ public class BitTable extends BaseTable implements AutoCloseable {
             this.next = null;
         }
 
+        /**
+         * Checks that the check and mask
+         * @return
+         */
         private boolean matches() {
             return (check & mask) != 0;
         }
@@ -118,6 +173,10 @@ public class BitTable extends BaseTable implements AutoCloseable {
             return false;
         }
 
+        /**
+         * Finds the next match
+         * @return {@code true} if a match was located, {@code false} otherwise.
+         */
         private boolean findMatch() {
             while (block < maxBlock) {
                 this.word = writeBuffer.get(block);
@@ -200,6 +259,7 @@ public class BitTable extends BaseTable implements AutoCloseable {
      * @param idx the bit to set.
      * @throws IOException on IOError
      * @throws IndexOutOfBoundx exception if {@code idx<0}.
+     * @see #sync(Callable, int, int, int)
      */
     public void clear(int idx) throws IOException {
         checkGEZero(idx, "index");
@@ -216,6 +276,7 @@ public class BitTable extends BaseTable implements AutoCloseable {
      * @param idx the bit to set.
      * @throws IOException on IOError
      * @throws IndexOutOfBoundx exception if {@code idx<0}.
+     * @see #sync(Callable, int, int, int)
      */
     public void set(int idx) throws IOException {
         checkGEZero(idx, "index");

@@ -39,6 +39,8 @@ import com.instaclustr.cassandra.bloom.idx.mem.tables.BaseTable.RangeLock;
  * Each bit in the bloom filter is associated with a bit map indicating which
  * indexed filters have that bit enabled.  There is one bit map for each bit in the
  * shape of the filter being indexed.
+ *
+ * <p>See http://dx.doi.org/10.1016/j.is.2015.01.002 for a discussion of the Flat Blooi design</p>
  */
 public class BloomTable implements AutoCloseable {
 
@@ -48,24 +50,31 @@ public class BloomTable implements AutoCloseable {
      * The number of bits in the Bloom filter.
      */
     private final int numberOfBits;
+    /**
+     * The buffer positioning calculator
+     */
     private final BufferCalc bufferCalc;
+    /**
+     * The bit table that contains the bloom filters.
+     */
     private final BitTable bitTable;
 
     /**
-     * The sizes for a singe bloom filter
-     * @param numberOfBits
-     * @param bufferFile
-     * @throws IOException
+     * Constructor.  Opens the file in read/write mode.
+     * @param numberOfBits the number of bits in the Bloom filters
+     * @param file The file that contains the bloom filters.
+     * @throws IOException on IO Error
      */
     public BloomTable(int numberOfBits, File file) throws IOException {
         this(numberOfBits, file, BaseTable.READ_WRITE);
     }
 
     /**
-     * The sizes for a singe bloom filter
-     * @param numberOfBits
-     * @param bufferFile
-     * @throws IOException
+     * Constructor.
+     * @param numberOfBits the number of bits in the Bloom filters
+     * @param file The file that contains the bloom filters.
+     * @param readOnly if {@code true} the table is read only, it is read/write otherwise.
+     * @throws IOException on IO Error
      */
     public BloomTable(int numberOfBits, File file, boolean readOnly) throws IOException {
         this.bitTable = new BitTable(file, readOnly);
@@ -74,19 +83,21 @@ public class BloomTable implements AutoCloseable {
         this.bitTable.setExtensionBlockSize(bufferCalc.lengthInBytes);
     }
 
+    /**
+     * Execute the func using the table executor.
+     * @param fn the Func to execute
+     * @return the Future for the func.
+     * @see BaseTable#exec(Func)
+     */
     public Future<?> exec(Func fn) {
         return bitTable.exec(fn);
-    }
-
-    public void requeue(Func fn) {
-        bitTable.requeue(fn);
     }
 
     /**
      * Sets the bloom filter at the index position in the table.
      * @param idx the index of the Bloom filter.
      * @param bloomFilter the Bloom filter
-     * @throws IOException
+     * @throws IOException on IO Error
      */
     public void setBloomAt(int idx, LongBuffer bloomFilter) throws IOException {
         bitTable.ensureBlock(bufferCalc.getNumberOfBlocks(idx));
@@ -115,6 +126,11 @@ public class BloomTable implements AutoCloseable {
         }
     }
 
+    /**
+     * Gets the Bloom filter at the index.
+     * @param idx the index to retrieve.
+     * @return the IndexProducer for the Bloom filter.
+     */
     public IndexProducer getBloomAt(int idx) {
         return new IndexProducer() {
 
@@ -143,7 +159,7 @@ public class BloomTable implements AutoCloseable {
      * Search for the bloom filter in the table.
      * @param result an IntConsumer that will accept the indexes of the found filters.
      * @param bloomFilter the Bloom filter to search for.
-     * @param busy the Busy table associated with this Bloom table.
+     * @param busy the Bit Table associated with this Bloom table.
      * @throws IOException on IO Error
      */
     public void search(IntConsumer result, LongBuffer bloomFilter, BitTable busy) throws IOException {
@@ -176,6 +192,9 @@ public class BloomTable implements AutoCloseable {
         return bitTable.toString();
     }
 
+    /**
+     * Drops this table.  All data will be deleted.
+     */
     public void drop() {
         BaseTable.closeQuietly(this);
         bitTable.drop();
@@ -186,26 +205,18 @@ public class BloomTable implements AutoCloseable {
         bitTable.close();
     }
 
-    /**
-     * for testing
-     * @return the Long buffer from the wrapped table.
-     * @throws IOException on error
-     */
 
+    /**
+     * For testing **NOT PART OF API***
+     * @return the Underlying Bittable for this Bloom table.
+     * @throws IOException on IO Error
+     */
     BitTable getBitTable() throws IOException {
         return bitTable;
     }
 
-    BufferCalc getBufferCals() {
-        return bufferCalc;
-    }
-
-    public void registerExtendNotification(Func fn) {
-        bitTable.registerExtendNotification(fn);
-    }
-
     /**
-     * Class to calcualte buffer positions.
+     * Class to calculate buffer positions.
      */
     class BufferCalc {
 

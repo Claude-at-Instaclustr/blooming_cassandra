@@ -23,7 +23,7 @@ public class LongBufferBitMap {
     }
 
     /**
-     * Gets an iterator over the indicies of the on bits in this buffer.
+     * Gets an iterator over the indices of the on bits in this buffer.
      * @param limit All returned values will be less than the limit.
      * @return A primitive iterator OfInt that contains the indices of the active bits less than the limit.
      */
@@ -100,11 +100,28 @@ public class LongBufferBitMap {
         }
     }
 
+    /**
+     * An iterator of int over the LongBuffer.
+     * returns the index of the enabled bits for the LongBuffer.
+     */
     private class LongBufferIteratorOfInt implements PrimitiveIterator.OfInt {
+        /**
+         * The next index.
+         */
         private int next = -1;
+        /**
+         * The last index.
+         */
         private int last = -1;
+        /**
+         * The maximum index.
+         */
         private final int limit;
 
+        /**
+         * Constructor.
+         * @param limit the maximum index to process.
+         */
         LongBufferIteratorOfInt(int limit) {
             this.limit = limit;
         }
